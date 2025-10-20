@@ -177,7 +177,7 @@ FIDDLE.PASSWORD = 'password'  -- ⚠️ NEVER use weak passwords
 
 1. **Run the application**:
    ```bash
-   python main.py
+   python main.py or launch DCS_Lua_Runner_GUI.exe
    ```
 
 2. **Configure connection settings** in the Settings tab:
