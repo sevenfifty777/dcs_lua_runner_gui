@@ -12,8 +12,8 @@ copy "dist\DCS_Lua_Runner_GUI.exe" "DCS_Lua_Runner_GUI_v1.0\"
 REM Copy documentation and setup files
 copy "README.md" "DCS_Lua_Runner_GUI_v1.0\"
 copy "dcs-fiddle-server.lua" "DCS_Lua_Runner_GUI_v1.0\"
-copy "LICENSE.md" "DCS_Lua_Runner_GUI_v1.0\"
-copy "QUICK_START.txt" "DCS_Lua_Runner_GUI_v1.0\" 2>nul
+copy "LICENSE" "DCS_Lua_Runner_GUI_v1.0\"
+copy "QUICK_START.md" "DCS_Lua_Runner_GUI_v1.0\" 2>nul
 
 REM Create installation guide
 echo Creating installation guide...
