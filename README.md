@@ -2,6 +2,47 @@
 
 A standalone Windows GUI application for executing Lua code in DCS World, replacing the need for VSCode extension or web interface.
 
+## ⚠️ **SECURITY WARNING** ⚠️
+
+**CRITICAL: This application requires DCS desanitization and may expose your system to significant security risks. Please read all warnings before proceeding.**
+
+### **Major Security Risks**
+
+#### **🔓 DCS Desanitization Risks**
+- **Removes DCS security restrictions** - Allows unrestricted Lua execution
+- **Full system access** - Scripts can access files, network, and system functions
+- **No sandboxing** - Malicious code can damage your system or steal data
+- **Persistent changes** - Effects remain until manually reverted
+
+#### **🌐 Network Exposure Risks** 
+- **Opens network ports** - DCS Fiddle server listens on network interfaces
+- **Remote code execution** - Anyone with access can run arbitrary Lua code on your system
+- **Credential vulnerabilities** - Weak authentication may be bypassed
+- **Data exposure** - Mission files and system information may be accessible remotely
+
+#### **⚡ DCS Fiddle Specific Risks**
+- **Unrestricted API access** - Full DCS scripting environment exposure
+- **Mission interference** - Can affect running missions and multiplayer sessions  
+- **Performance impact** - May cause DCS instability or crashes
+- **Log exposure** - Sensitive information may be logged or transmitted
+
+### **🛡️ Risk Mitigation**
+
+**ONLY proceed if you:**
+- ✅ **Understand the security implications** completely
+- ✅ **Trust all code** you plan to execute  
+- ✅ **Use on isolated systems** (not production/online gaming PCs)
+- ✅ **Have proper backups** of your DCS installation
+- ✅ **Use strong authentication** for remote access
+- ✅ **Restrict network access** (firewall rules, VPN-only access)
+- ✅ **Monitor system activity** when running unknown scripts
+
+**⛔ DO NOT USE if:**
+- ❌ You don't understand the technical implications
+- ❌ Your PC contains sensitive personal/work data  
+- ❌ You plan to run untrusted code from others
+- ❌ You use the same PC for online banking/shopping
+
 ## Features
 
 - **Lua Code Editor**: Syntax highlighting and line numbers for Lua code
@@ -46,32 +87,90 @@ This application replicates the functionality of:
 
 ## DCS Setup
 
+### ⚠️ **CRITICAL SECURITY NOTICE** ⚠️
+
+**The following steps will DISABLE DCS security protections. This creates serious security vulnerabilities:**
+
+- **🔥 REMOVES SANDBOXING** - Scripts gain full system access
+- **💾 FILE SYSTEM ACCESS** - Can read/write/delete any files on your computer  
+- **🌐 NETWORK ACCESS** - Can make network connections to any server
+- **⚙️ SYSTEM COMMANDS** - Can execute system commands and programs
+- **🔓 PERSISTENT CHANGES** - Security remains disabled until manually restored
+
+**💡 SECURITY BEST PRACTICES:**
+- 🔒 **Backup your DCS installation** before proceeding
+- 🏠 **Use on isolated/offline systems only** 
+- 👀 **Review ALL code before execution** - never run untrusted scripts
+- 🔐 **Use strong passwords** for remote access
+- 🚪 **Disable when not needed** - re-enable sanitization after use
+- 📊 **Monitor system activity** while running scripts
+
+### Installation Steps
+
 You need to install the DCS Fiddle server script in your DCS installation:
 
 1. **Download** the `dcs-fiddle-server.lua` script (included in this repository)
 2. **Copy** to `%USERPROFILE%\Saved Games\<DCS VERSION>\Scripts\Hooks\`
-3. **De-sanitize Mission Scripting** (edit `DCS_INSTALL\Scripts\MissionScripting.lua`):
+3. **⚠️ De-sanitize Mission Scripting** (edit `DCS_INSTALL\Scripts\MissionScripting.lua`):
    ```lua
    do
        sanitizeModule('os')
        sanitizeModule('io')
        sanitizeModule('lfs')
-   --  _G['require'] = nil
+   --  _G['require'] = nil      -- ⚠️ SECURITY: This enables require() function
        _G['loadlib'] = nil
-   --  _G['package'] = nil
+   --  _G['package'] = nil      -- ⚠️ SECURITY: This enables package loading
    end
    ```
 
+**🔄 TO RESTORE SECURITY:** Uncomment these lines (remove `--`) when finished:
+```lua
+_G['require'] = nil     -- Restore this line to disable require()
+_G['package'] = nil     -- Restore this line to disable package loading
+```
+
 ### Remote Access Configuration
 
-To enable remote access, modify `dcs-fiddle-server.lua`:
+### 🚨 **EXTREME SECURITY RISK** 🚨
+
+**Enabling remote access creates MAXIMUM SECURITY EXPOSURE:**
+
+- **🌍 INTERNET ACCESSIBLE** - Your PC becomes accessible from anywhere on the network/internet
+- **💻 REMOTE CODE EXECUTION** - Anyone with credentials can run ANY Lua code on your system
+- **🔓 UNSECURED BY DEFAULT** - Basic authentication is easily bypassed or bruted
+- **📊 DATA EXFILTRATION** - All DCS data, logs, and accessible files can be stolen
+- **🎯 ATTACK VECTOR** - Creates entry point for malicious actors
+
+**🛡️ MANDATORY SECURITY MEASURES:**
+
+1. **🔥 FIREWALL RULES** - Block port 12080 from internet, allow only specific IPs
+2. **🔐 STRONG CREDENTIALS** - Use complex passwords (20+ characters, mixed case, numbers, symbols)  
+3. **🏠 LOCAL NETWORK ONLY** - Never expose to internet (`BIND_IP = '127.0.0.1'` for local only)
+4. **📱 VPN ACCESS** - Use VPN for remote access instead of direct exposure
+5. **⏰ TIME LIMITS** - Disable when not actively needed
+6. **👀 MONITORING** - Watch logs for unauthorized access attempts
+
+**⚠️ CONFIGURATION OPTIONS:**
 
 ```lua
-FIDDLE.PORT = 12080         -- keep at 12080 for compatibility
-FIDDLE.BIND_IP = '0.0.0.0'  -- enable remote access
-FIDDLE.AUTH = true          -- enable authentication (recommended)
-FIDDLE.USERNAME = 'your_username'    -- set your username
-FIDDLE.PASSWORD = 'your_password'    -- set your password
+-- SAFER: Local access only (recommended)
+FIDDLE.BIND_IP = '127.0.0.1'  -- Local computer only
+FIDDLE.PORT = 12080           
+
+-- DANGEROUS: Network/Internet access (high risk)
+FIDDLE.BIND_IP = '0.0.0.0'    -- ⚠️ EXPOSES TO NETWORK/INTERNET
+FIDDLE.PORT = 12080           
+
+-- MANDATORY: Strong authentication
+FIDDLE.AUTH = true                    -- ⚠️ NEVER set to false
+FIDDLE.USERNAME = 'ComplexUsername123'    -- Use unique, complex username  
+FIDDLE.PASSWORD = 'VeryLongComplexPassword456!'  -- 20+ character password
+```
+
+**🔴 NEVER DO THIS:**
+```lua
+FIDDLE.AUTH = false           -- ⚠️ NEVER disable authentication
+FIDDLE.PASSWORD = 'password'  -- ⚠️ NEVER use weak passwords
 ```
 
 ## Usage
