@@ -39,7 +39,7 @@ A standalone Windows GUI application for executing Lua code in DCS World, replac
 
 **⛔ DO NOT USE if:**
 - ❌ You don't understand the technical implications
-- ❌ Your PC contains sensitive personal/work data  
+- ❌ Your Sever contains sensitive personal/work data  
 - ❌ You plan to run untrusted code from others
 - ❌ You use the same PC for online banking/shopping
 
