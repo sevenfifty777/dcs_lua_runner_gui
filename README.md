@@ -11,7 +11,7 @@ A standalone Windows GUI application for executing Lua code in DCS World, replac
 - **Result Formatting**: Display results as Lua tables or JSON
 - **Settings Persistence**: Save and load connection settings
 - **File Operations**: Open, save, and manage Lua files
-- **Dark Theme**: Professional dark theme interface
+
 
 ## Based On
 
@@ -100,6 +100,7 @@ FIDDLE.PASSWORD = 'your_password'    -- set your password
 ## Interface Overview
 
 ### Toolbar
+- **📁 Load File**: Load Lua file with options (replace, append, or insert at cursor)
 - **▶ Run**: Execute all code in editor
 - **▶ Selected**: Execute selected code only
 - **Local/Remote**: Toggle execution target

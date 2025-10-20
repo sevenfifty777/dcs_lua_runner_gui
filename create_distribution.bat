@@ -16,6 +16,26 @@ echo.
 echo Creating distribution package: %DIST_DIR%
 echo.
 
+REM Step 1: Rebuild executable with latest code
+echo ================================================
+echo Step 1/2: Building executable with latest code...
+echo ================================================
+echo Running PyInstaller to create fresh executable...
+pyinstaller build_exe.spec
+if %ERRORLEVEL% neq 0 (
+    echo ERROR: Failed to build executable!
+    echo Please check that PyInstaller is installed and build_exe.spec is correct.
+    pause
+    exit /b 1
+)
+echo Executable built successfully!
+echo.
+
+REM Step 2: Create distribution package
+echo ================================================
+echo Step 2/2: Creating distribution package...
+echo ================================================
+
 REM Create distribution directory
 if exist "%DIST_DIR%" rmdir /s /q "%DIST_DIR%"
 mkdir "%DIST_DIR%"

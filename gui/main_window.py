@@ -79,6 +79,8 @@ class MainWindow:
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="New", command=self.new_file, accelerator="Ctrl+N")
         file_menu.add_command(label="Open...", command=self.open_file, accelerator="Ctrl+O")
+        file_menu.add_command(label="Load File...", command=self.load_lua_file)
+        file_menu.add_separator()
         file_menu.add_command(label="Save", command=self.save_file, accelerator="Ctrl+S")
         file_menu.add_command(label="Save As...", command=self.save_file_as, accelerator="Ctrl+Shift+S")
         file_menu.add_separator()
@@ -122,6 +124,10 @@ class MainWindow:
         """Create the toolbar."""
         toolbar = ttk.Frame(self.root)
         toolbar.pack(fill=tk.X, padx=5, pady=(5, 0))
+        
+        # Load file button
+        self.load_file_button = ttk.Button(toolbar, text="📁 Load File", command=self.load_lua_file)
+        self.load_file_button.pack(side=tk.LEFT, padx=(0, 10))
         
         # Run button
         self.run_button = ttk.Button(toolbar, text="▶ Run", command=self.run_code)
@@ -594,6 +600,91 @@ end"""
     def save_file_as(self):
         """Save current code to a new file."""
         self.save_file()
+        
+    def load_lua_file(self):
+        """Load a Lua file with options for how to handle existing content."""
+        filename = filedialog.askopenfilename(
+            title="Load Lua File",
+            filetypes=[("Lua files", "*.lua"), ("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if filename:
+            try:
+                with open(filename, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Check if there's existing content in the editor
+                current_content = self.code_editor.get('1.0', 'end-1c').strip()
+                
+                if current_content:
+                    # Create a dialog to ask what to do with existing content
+                    dialog = tk.Toplevel(self.root)
+                    dialog.title("Load File Options")
+                    dialog.geometry("400x200")
+                    dialog.configure(bg='#2d2d30')
+                    dialog.transient(self.root)
+                    dialog.grab_set()
+                    
+                    # Center the dialog
+                    dialog.update_idletasks()
+                    x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+                    y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+                    dialog.geometry(f"+{x}+{y}")
+                    
+                    result = {'action': None}
+                    
+                    # Dialog content
+                    ttk.Label(dialog, text="The editor contains existing code.", 
+                             background='#2d2d30', foreground='#ffffff').pack(pady=10)
+                    ttk.Label(dialog, text="How would you like to load the file?", 
+                             background='#2d2d30', foreground='#ffffff').pack(pady=5)
+                    
+                    button_frame = ttk.Frame(dialog)
+                    button_frame.pack(pady=20)
+                    
+                    def replace_content():
+                        result['action'] = 'replace'
+                        dialog.destroy()
+                    
+                    def append_content():
+                        result['action'] = 'append'
+                        dialog.destroy()
+                    
+                    def insert_at_cursor():
+                        result['action'] = 'insert'
+                        dialog.destroy()
+                    
+                    def cancel_load():
+                        result['action'] = 'cancel'
+                        dialog.destroy()
+                    
+                    ttk.Button(button_frame, text="Replace All", command=replace_content).pack(side=tk.LEFT, padx=5)
+                    ttk.Button(button_frame, text="Append to End", command=append_content).pack(side=tk.LEFT, padx=5)
+                    ttk.Button(button_frame, text="Insert at Cursor", command=insert_at_cursor).pack(side=tk.LEFT, padx=5)
+                    ttk.Button(button_frame, text="Cancel", command=cancel_load).pack(side=tk.LEFT, padx=5)
+                    
+                    # Wait for dialog to close
+                    dialog.wait_window()
+                    
+                    # Handle the result
+                    if result['action'] == 'replace':
+                        self.code_editor.delete('1.0', tk.END)
+                        self.code_editor.insert('1.0', content)
+                    elif result['action'] == 'append':
+                        self.code_editor.insert(tk.END, '\n\n-- Loaded from: ' + filename + '\n' + content)
+                    elif result['action'] == 'insert':
+                        cursor_pos = self.code_editor.index(tk.INSERT)
+                        self.code_editor.insert(cursor_pos, '\n-- Loaded from: ' + filename + '\n' + content + '\n')
+                    elif result['action'] == 'cancel':
+                        return
+                else:
+                    # No existing content, just load the file
+                    self.code_editor.insert('1.0', content)
+                
+                # Apply syntax highlighting
+                self.lua_highlighter.highlight_syntax()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load file: {e}")
         
     def cut_text(self):
         """Cut selected text."""

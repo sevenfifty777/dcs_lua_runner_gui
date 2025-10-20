@@ -67,6 +67,7 @@ YOU MUST INSTALL THE DCS FIDDLE SERVER SCRIPT:
 ==================
 
 TOOLBAR BUTTONS:
+- 📁 Load File: Load Lua file with options (replace, append, or insert at cursor)
 - ▶ Run: Execute all code
 - ▶ Selected: Execute selected code only
 - Local/Remote: Toggle between local DCS and remote server
