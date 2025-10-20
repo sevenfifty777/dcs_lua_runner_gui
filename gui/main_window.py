@@ -194,13 +194,30 @@ class MainWindow:
         self.code_editor.bind('<Configure>', self.sync_line_numbers)
         
         # Sample Lua code
-        sample_code = """-- DCS Lua Code Example
+        sample_code = """-- Get mission information
+local mission_time = timer.getTime()
+local theatre = env.mission.theatre
+
+-- Get player information
 local player = world.getPlayer()
 if player then
-    env.info("Player name: " .. player:getName())
-    return player:getPosition().p
+    local pos = player:getPosition().p
+    return {
+        mission_time = mission_time,
+        theatre = theatre,
+        player_name = player:getName(),
+        player_position = {
+            x = pos.x,
+            y = pos.y,
+            z = pos.z
+        }
+    }
 else
-    return "No player found"
+    return {
+        mission_time = mission_time,
+        theatre = theatre,
+        message = "No player found"
+    }
 end"""
         self.code_editor.insert('1.0', sample_code)
         

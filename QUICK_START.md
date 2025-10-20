@@ -18,6 +18,7 @@ FOR REMOTE DCS:
 - Uncheck "Run Code Locally" in Settings tab
 - Enter server address, port, username, and password
 - Configure authentication in the remote DCS server
+- **IMPORTANT**: Click "Save Settings" after entering all connection details
 
 🎯 USAGE
 =========

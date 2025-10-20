@@ -85,6 +85,7 @@ FIDDLE.PASSWORD = 'your_password'    -- set your password
    - Server address and port
    - Authentication credentials
    - Execution environment preferences
+   - **IMPORTANT**: Click "Save Settings" after entering all connection details to persist your configuration
 
 3. **Write or load Lua code** in the editor
 
