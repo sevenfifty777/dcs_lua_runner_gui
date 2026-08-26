@@ -45,9 +45,13 @@ service-specific environment is unavailable.
 ## 2. Configure Caddy
 
 Start from `deploy/Caddyfile.example` and follow
-`docs/CADDY_MTLS_SETUP.md`. Keep the tracked example unchanged; copy or merge it
-into the private active Caddyfile on the server and replace these site addresses
-there:
+`docs/CADDY_MTLS_SETUP.md`. That guide is the authoritative beginner-oriented
+procedure: it identifies the machine for every step, explains every certificate
+file, and includes the required copy/transfer commands. Do not use this Quick
+Start as a substitute for the full guide during the first deployment.
+
+Keep the tracked example unchanged; copy or merge it into the private active
+Caddyfile on the server and replace these site addresses there:
 
 - `https://fiddle.example.com` -> `127.0.0.1:12080`;
 - `https://fiddle-gui.example.com` -> `127.0.0.1:12081`.

@@ -5,8 +5,10 @@
 #
 # Validate with the exact Caddy executable used by the Windows service before
 # reload. DCS_FIDDLE_PROXY_TOKEN must be supplied through the Caddy service
-# environment and must match dcs-fiddle-config.lua. For NSSM, use the Caddy
-# service's AppEnvironmentExtra setting, then restart that service.
+# environment and must match dcs-fiddle-config.lua. The {env.*} placeholder is
+# resolved at runtime by the Caddy service process. For NSSM, use the Caddy
+# service's AppEnvironmentExtra setting, then restart that service whenever the
+# environment value changes.
 
 # OPTIONAL: These two dashboard blocks are unrelated to DCS Lua Runner. Keep or
 # adapt them only when the same Caddy instance already serves those dashboards;

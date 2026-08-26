@@ -113,6 +113,11 @@ Implemented:
 - The proxy-token generator uses `RandomNumberGenerator.Create().GetBytes()` so
   the documented command works in both Windows PowerShell 5.1 and PowerShell 7;
   it validates the expected 43-character base64url output before use.
+- Reworked the Caddy/mTLS guide as an operator-oriented Windows walkthrough.
+  Every section now identifies its machine role, classifies secret and public
+  files, explains expected output, makes the `client-cert-ext.cnf` copy step
+  explicit, and separates CA creation, file transfer, DCS server installation,
+  GUI key ACLs, Caddy validation, service restart, renewal, and rollback.
 
 ## Validation Status
 
@@ -129,7 +134,7 @@ Completed in this environment:
 - The PowerShell distribution script parsed successfully.
 - PyInstaller 6.22.2 built and smoke-tested
   `DCS_Lua_Runner_GUI_v2.0-dev`; root and packaged Lua SHA-256 matched at
-  `964F32A5B0AAB54A9B4CAFA2AE6AF10EE515D9A603A75919287E9BE5E74CAB2F`.
+  `676244D185C59315B3A4EA7CAE319A406A594F750EE5BCF694B10BFA4025F9EE`.
   The rebuilt executable SHA-256 is
   `FD859701AC25E8079FB5E235C043ADEA3AED6AB34B207D0BDB2958FDD8954D15`.
 
