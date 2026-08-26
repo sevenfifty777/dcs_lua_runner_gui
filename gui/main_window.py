@@ -2,13 +2,17 @@
 Main window for the DCS Lua Runner GUI application.
 """
 
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+import datetime
+import json
+import queue
 import threading
-from typing import Dict, Any
+import tkinter as tk
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
+from typing import Any
 
 from core.dcs_client import DCSClient
-from core.settings_manager import SettingsManager
+from core.settings_manager import SettingsError, SettingsManager
 from utils.syntax_highlighter import LuaSyntaxHighlighter, SimpleTextHighlighter
 
 
@@ -20,11 +24,23 @@ class MainWindow:
         self.settings_manager = SettingsManager()
         self.settings = self.settings_manager.load_settings()
         self.dcs_client = DCSClient()
+        self.execution_in_progress = False
+        self.connection_test_in_progress = False
+        self.closing = False
+        self.current_file: Path | None = None
+        self.ui_queue: queue.Queue[tuple[Any, tuple[Any, ...]]] = queue.Queue()
+        self.ui_poll_after_id: str | None = None
         
         self.setup_window()
         self.create_widgets()
         self.setup_syntax_highlighting()
         self.update_status_bar()
+        self._poll_ui_queue()
+        if self.settings_manager.last_error:
+            self.root.after(
+                0,
+                lambda: messagebox.showwarning("Settings warning", self.settings_manager.last_error),
+            )
         
     def setup_window(self):
         """Configure the main window."""
@@ -104,7 +120,6 @@ class MainWindow:
         # Settings menu
         settings_menu = tk.Menu(menubar, tearoff=0, bg='#2d2d30', fg='#ffffff')
         menubar.add_cascade(label="Settings", menu=settings_menu)
-        settings_menu.add_command(label="Toggle Local/Remote", command=self.toggle_local_remote)
         settings_menu.add_command(label="Toggle Mission/GUI", command=self.toggle_mission_gui)
         
         # Help menu
@@ -136,10 +151,6 @@ class MainWindow:
         # Run selected button
         self.run_selected_button = ttk.Button(toolbar, text="▶ Selected", command=self.run_selected)
         self.run_selected_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Local/Remote toggle
-        self.local_remote_button = ttk.Button(toolbar, text="Local", command=self.toggle_local_remote)
-        self.local_remote_button.pack(side=tk.LEFT, padx=(0, 5))
         
         # Mission/GUI toggle
         self.mission_gui_button = ttk.Button(toolbar, text="Mission", command=self.toggle_mission_gui)
@@ -264,64 +275,44 @@ end"""
         conn_frame = ttk.LabelFrame(scrollable_frame, text="Connection Settings", padding=10)
         conn_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # Server Address
-        ttk.Label(conn_frame, text="Server Address:").grid(row=0, column=0, sticky=tk.W, pady=2)
-        self.server_address_var = tk.StringVar(value=self.settings.get('server_address', ''))
-        server_entry = ttk.Entry(conn_frame, textvariable=self.server_address_var, width=30)
-        server_entry.grid(row=0, column=1, sticky=tk.W, padx=(5, 0), pady=2)
-        
-        # Server Port
-        ttk.Label(conn_frame, text="Server Port:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.server_port_var = tk.StringVar(value=str(self.settings.get('server_port', 12080)))
-        port_entry = ttk.Entry(conn_frame, textvariable=self.server_port_var, width=10)
-        port_entry.grid(row=1, column=1, sticky=tk.W, padx=(5, 0), pady=2)
-        
-        # GUI Server Address
-        ttk.Label(conn_frame, text="GUI Server Address:").grid(row=2, column=0, sticky=tk.W, pady=2)
-        self.server_address_gui_var = tk.StringVar(value=self.settings.get('server_address_gui', ''))
-        gui_server_entry = ttk.Entry(conn_frame, textvariable=self.server_address_gui_var, width=30)
-        gui_server_entry.grid(row=2, column=1, sticky=tk.W, padx=(5, 0), pady=2)
-        
-        # GUI Server Port
-        ttk.Label(conn_frame, text="GUI Server Port:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        self.server_port_gui_var = tk.StringVar(value=str(self.settings.get('server_port_gui', 12081)))
-        gui_port_entry = ttk.Entry(conn_frame, textvariable=self.server_port_gui_var, width=10)
-        gui_port_entry.grid(row=3, column=1, sticky=tk.W, padx=(5, 0), pady=2)
-        
-        # HTTPS
-        self.use_https_var = tk.BooleanVar(value=self.settings.get('use_https', False))
-        https_check = ttk.Checkbutton(conn_frame, text="Use HTTPS", variable=self.use_https_var)
-        https_check.grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=2)
-        
-        # Authentication Settings
-        auth_frame = ttk.LabelFrame(scrollable_frame, text="Authentication", padding=10)
-        auth_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        # Username
-        ttk.Label(auth_frame, text="Username:").grid(row=0, column=0, sticky=tk.W, pady=2)
-        self.username_var = tk.StringVar(value=self.settings.get('web_auth_username', 'username'))
-        username_entry = ttk.Entry(auth_frame, textvariable=self.username_var, width=20)
-        username_entry.grid(row=0, column=1, sticky=tk.W, padx=(5, 0), pady=2)
-        
-        # Password
-        ttk.Label(auth_frame, text="Password:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.password_var = tk.StringVar(value=self.settings.get('web_auth_password', 'password'))
-        password_entry = ttk.Entry(auth_frame, textvariable=self.password_var, show="*", width=20)
-        password_entry.grid(row=1, column=1, sticky=tk.W, padx=(5, 0), pady=2)
+        ttk.Label(conn_frame, text="Mission HTTPS URL:").grid(row=0, column=0, sticky=tk.W, pady=2)
+        self.mission_url_var = tk.StringVar(value=self.settings.get('mission_url', ''))
+        ttk.Entry(conn_frame, textvariable=self.mission_url_var, width=42).grid(
+            row=0, column=1, sticky=tk.EW, padx=(5, 0), pady=2
+        )
+
+        ttk.Label(conn_frame, text="Hooks/GUI HTTPS URL:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        self.gui_url_var = tk.StringVar(value=self.settings.get('gui_url', ''))
+        ttk.Entry(conn_frame, textvariable=self.gui_url_var, width=42).grid(
+            row=1, column=1, sticky=tk.EW, padx=(5, 0), pady=2
+        )
+        conn_frame.columnconfigure(1, weight=1)
+
+        # Mutual TLS settings
+        tls_frame = ttk.LabelFrame(scrollable_frame, text="Mutual TLS", padding=10)
+        tls_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        self.ca_bundle_var = tk.StringVar(value=self.settings.get('ca_bundle', ''))
+        self.client_cert_var = tk.StringVar(value=self.settings.get('client_cert_file', ''))
+        self.client_key_var = tk.StringVar(value=self.settings.get('client_key_file', ''))
+
+        self._create_file_setting(tls_frame, 0, "CA bundle (optional):", self.ca_bundle_var)
+        self._create_file_setting(tls_frame, 1, "Client certificate:", self.client_cert_var)
+        self._create_file_setting(tls_frame, 2, "Client private key:", self.client_key_var)
+        ttk.Label(
+            tls_frame,
+            text="The private key must be unencrypted PEM and protected with Windows ACLs.",
+        ).grid(row=3, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
+        tls_frame.columnconfigure(1, weight=1)
         
         # Execution Settings
         exec_frame = ttk.LabelFrame(scrollable_frame, text="Execution Settings", padding=10)
         exec_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # Local/Remote
-        self.run_locally_var = tk.BooleanVar(value=self.settings.get('run_code_locally', True))
-        local_check = ttk.Checkbutton(exec_frame, text="Run Code Locally", variable=self.run_locally_var)
-        local_check.grid(row=0, column=0, sticky=tk.W, pady=2)
-        
         # Mission/GUI Environment
         self.mission_env_var = tk.BooleanVar(value=self.settings.get('run_in_mission_env', True))
         mission_check = ttk.Checkbutton(exec_frame, text="Run in Mission Environment", variable=self.mission_env_var)
-        mission_check.grid(row=1, column=0, sticky=tk.W, pady=2)
+        mission_check.grid(row=0, column=0, sticky=tk.W, pady=2)
         
         # Display Settings
         display_frame = ttk.LabelFrame(scrollable_frame, text="Display Settings", padding=10)
@@ -339,10 +330,43 @@ end"""
         
         ttk.Button(button_frame, text="Save Settings", command=self.save_settings).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(button_frame, text="Load Settings", command=self.load_settings).pack(side=tk.LEFT)
+        self.test_connection_button = ttk.Button(
+            button_frame,
+            text="Test Connection",
+            command=self.test_connection,
+        )
+        self.test_connection_button.pack(side=tk.LEFT, padx=(5, 0))
         
         # Pack canvas and scrollbar
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+
+    def _create_file_setting(
+        self,
+        parent: ttk.LabelFrame,
+        row: int,
+        label: str,
+        variable: tk.StringVar,
+    ) -> None:
+        """Create a path entry and browse button for a TLS file."""
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(parent, textvariable=variable, width=36).grid(
+            row=row, column=1, sticky=tk.EW, padx=(5, 5), pady=2
+        )
+        ttk.Button(
+            parent,
+            text="Browse...",
+            command=lambda: self._select_tls_file(variable),
+        ).grid(row=row, column=2, sticky=tk.W, pady=2)
+
+    def _select_tls_file(self, variable: tk.StringVar) -> None:
+        """Select a PEM certificate, key, or CA bundle."""
+        filename = filedialog.askopenfilename(
+            title="Select TLS file",
+            filetypes=[("PEM files", "*.pem *.crt *.cer *.key"), ("All files", "*.*")],
+        )
+        if filename:
+            variable.set(filename)
         
     def create_results_tab(self):
         """Create the results tab."""
@@ -386,8 +410,7 @@ end"""
     def on_text_change(self, event=None):
         """Handle text changes in the code editor."""
         self.update_line_numbers()
-        # Delay syntax highlighting to avoid performance issues
-        self.root.after_idle(self.lua_highlighter.highlight_syntax)
+        self.lua_highlighter.schedule_highlight()
         
     def update_line_numbers(self):
         """Update line numbers in the editor."""
@@ -410,9 +433,56 @@ end"""
         self.status_bar.config(text=connection_info)
         
         # Update button texts
-        self.local_remote_button.config(text="Local" if self.settings.get('run_code_locally', True) else "Remote")
         self.mission_gui_button.config(text="Mission" if self.settings.get('run_in_mission_env', True) else "GUI")
         self.format_button.config(text=self.settings.get('return_display_format', 'lua').title())
+
+    def _enqueue_ui(self, callback: Any, *arguments: Any) -> None:
+        """Queue a GUI callback without invoking Tk from a worker thread."""
+        self.ui_queue.put((callback, arguments))
+
+    def _poll_ui_queue(self) -> None:
+        """Run queued worker results on the Tk main thread."""
+        if self.closing:
+            return
+        try:
+            while True:
+                callback, arguments = self.ui_queue.get_nowait()
+                callback(*arguments)
+        except queue.Empty:
+            pass
+        self.ui_poll_after_id = self.root.after(50, self._poll_ui_queue)
+
+    def test_connection(self) -> None:
+        """Test the selected HTTPS and mTLS profile without saving it."""
+        if self.connection_test_in_progress:
+            return
+        try:
+            self._collect_settings_from_ui()
+        except SettingsError as error:
+            messagebox.showerror("Invalid settings", str(error))
+            return
+
+        self.connection_test_in_progress = True
+        self.test_connection_button.config(state='disabled')
+        self.status_bar.config(text="Testing authenticated connection...")
+        connection_settings = self.settings.copy()
+
+        def check_connection() -> None:
+            success, result = self.dcs_client.check_health(connection_settings)
+            self._enqueue_ui(self._finish_connection_test, success, result)
+
+        threading.Thread(target=check_connection, daemon=True).start()
+
+    def _finish_connection_test(self, success: bool, result: Any) -> None:
+        """Display a health-check result on the Tk main thread."""
+        self.connection_test_in_progress = False
+        self.test_connection_button.config(state='normal')
+        self.update_status_bar()
+        if success:
+            environment = result.get("environment", "unknown") if isinstance(result, dict) else "unknown"
+            messagebox.showinfo("Connection successful", f"Authenticated {environment} endpoint is ready.")
+        else:
+            messagebox.showerror("Connection failed", str(result))
         
     def run_code(self):
         """Run all code in the editor."""
@@ -436,34 +506,47 @@ end"""
             
     def _execute_code(self, code: str, code_type: str):
         """Execute code on DCS server in a separate thread."""
+        if self.execution_in_progress:
+            messagebox.showinfo("Execution in progress", "Wait for the current request to finish.")
+            return
+        try:
+            self._collect_settings_from_ui()
+        except SettingsError as error:
+            messagebox.showerror("Invalid settings", str(error))
+            return
+
+        self.execution_in_progress = True
+        self.run_button.config(state='disabled')
+        self.run_selected_button.config(state='disabled')
+        self.status_bar.config(text="Executing...")
+        execution_settings = self.settings.copy()
+
         def execute():
-            self.run_button.config(state='disabled')
-            self.run_selected_button.config(state='disabled')
-            self.status_bar.config(text="Executing...")
-            
             try:
-                success, result = self.dcs_client.run_lua(code, self.settings)
+                success, result = self.dcs_client.run_lua(code, execution_settings)
                 
-                # Update results on main thread
-                self.root.after(0, lambda: self._display_result(success, result, code_type))
+                self._enqueue_ui(self._display_result, success, result, code_type)
                 
-            except Exception as e:
-                self.root.after(0, lambda: self._display_result(False, str(e), code_type))
+            except Exception as error:
+                message = str(error)
+                self._enqueue_ui(self._display_result, False, message, code_type)
             finally:
-                self.root.after(0, lambda: (
-                    self.run_button.config(state='normal'),
-                    self.run_selected_button.config(state='normal'),
-                    self.update_status_bar()
-                ))
+                self._enqueue_ui(self._finish_execution)
         
         threading.Thread(target=execute, daemon=True).start()
+
+    def _finish_execution(self) -> None:
+        """Restore GUI controls after a worker request finishes."""
+        self.execution_in_progress = False
+        self.run_button.config(state='normal')
+        self.run_selected_button.config(state='normal')
+        self.update_status_bar()
         
     def _display_result(self, success: bool, result: Any, code_type: str):
         """Display execution result in the results tab."""
         self.results_text.config(state='normal')
         
         # Add timestamp and code type
-        import datetime
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         header = f"[{timestamp}] {code_type} - {'SUCCESS' if success else 'ERROR'}\n"
         
@@ -473,7 +556,6 @@ end"""
             if self.settings.get('return_display_format', 'lua') == 'lua':
                 formatted_result = self.dcs_client.format_result_as_lua(result)
             else:
-                import json
                 formatted_result = json.dumps(result, indent=4) if result is not None else "null"
             
             self.results_text.insert(tk.END, formatted_result + "\n\n")
@@ -492,12 +574,6 @@ end"""
         # Switch to results tab
         self.notebook.select(1)
         
-    def toggle_local_remote(self):
-        """Toggle between local and remote execution."""
-        self.settings['run_code_locally'] = not self.settings.get('run_code_locally', True)
-        self.run_locally_var.set(self.settings['run_code_locally'])
-        self.update_status_bar()
-        
     def toggle_mission_gui(self):
         """Toggle between mission and GUI environment."""
         self.settings['run_in_mission_env'] = not self.settings.get('run_in_mission_env', True)
@@ -514,41 +590,45 @@ end"""
         
     def save_settings(self):
         """Save current settings to file."""
-        # Update settings from UI
-        self.settings.update({
-            'server_address': self.server_address_var.get(),
-            'server_port': int(self.server_port_var.get()) if self.server_port_var.get().isdigit() else 12080,
-            'server_address_gui': self.server_address_gui_var.get(),
-            'server_port_gui': int(self.server_port_gui_var.get()) if self.server_port_gui_var.get().isdigit() else 12081,
-            'use_https': self.use_https_var.get(),
-            'web_auth_username': self.username_var.get(),
-            'web_auth_password': self.password_var.get(),
-            'run_code_locally': self.run_locally_var.get(),
+        try:
+            self._collect_settings_from_ui()
+            if self.settings_manager.save_settings(self.settings):
+                messagebox.showinfo("Success", "Settings saved successfully")
+                self.update_status_bar()
+            else:
+                messagebox.showerror(
+                    "Error",
+                    self.settings_manager.last_error or "Failed to save settings",
+                )
+        except SettingsError as error:
+            messagebox.showerror("Invalid settings", str(error))
+
+    def _collect_settings_from_ui(self) -> None:
+        """Collect and validate the settings currently visible in the UI."""
+        updated = self.settings.copy()
+        updated.update({
+            'mission_url': self.mission_url_var.get(),
+            'gui_url': self.gui_url_var.get(),
+            'ca_bundle': self.ca_bundle_var.get(),
+            'client_cert_file': self.client_cert_var.get(),
+            'client_key_file': self.client_key_var.get(),
             'run_in_mission_env': self.mission_env_var.get(),
             'return_display_format': self.format_var.get(),
             'window_width': self.root.winfo_width(),
-            'window_height': self.root.winfo_height()
+            'window_height': self.root.winfo_height(),
         })
-        
-        if self.settings_manager.save_settings(self.settings):
-            messagebox.showinfo("Success", "Settings saved successfully")
-            self.update_status_bar()
-        else:
-            messagebox.showerror("Error", "Failed to save settings")
+        self.settings = self.settings_manager.validate_settings(updated)
             
     def load_settings(self):
         """Load settings from file."""
         self.settings = self.settings_manager.load_settings()
         
         # Update UI
-        self.server_address_var.set(self.settings.get('server_address', ''))
-        self.server_port_var.set(str(self.settings.get('server_port', 12080)))
-        self.server_address_gui_var.set(self.settings.get('server_address_gui', ''))
-        self.server_port_gui_var.set(str(self.settings.get('server_port_gui', 12081)))
-        self.use_https_var.set(self.settings.get('use_https', False))
-        self.username_var.set(self.settings.get('web_auth_username', 'username'))
-        self.password_var.set(self.settings.get('web_auth_password', 'password'))
-        self.run_locally_var.set(self.settings.get('run_code_locally', True))
+        self.mission_url_var.set(self.settings.get('mission_url', ''))
+        self.gui_url_var.set(self.settings.get('gui_url', ''))
+        self.ca_bundle_var.set(self.settings.get('ca_bundle', ''))
+        self.client_cert_var.set(self.settings.get('client_cert_file', ''))
+        self.client_key_var.set(self.settings.get('client_key_file', ''))
         self.mission_env_var.set(self.settings.get('run_in_mission_env', True))
         self.format_var.set(self.settings.get('return_display_format', 'lua'))
         
@@ -565,6 +645,8 @@ end"""
         """Create a new file."""
         if messagebox.askyesno("New File", "Clear current code?"):
             self.code_editor.delete('1.0', tk.END)
+            self.current_file = None
+            self._update_window_title()
             
     def open_file(self):
         """Open a Lua file."""
@@ -574,32 +656,50 @@ end"""
         )
         if filename:
             try:
-                with open(filename, 'r', encoding='utf-8') as f:
-                    content = f.read()
+                opened_path = Path(filename)
+                content = opened_path.read_text(encoding='utf-8')
                 self.code_editor.delete('1.0', tk.END)
                 self.code_editor.insert('1.0', content)
+                self.current_file = opened_path
+                self._update_window_title()
                 self.lua_highlighter.highlight_syntax()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to open file: {e}")
+            except (OSError, UnicodeError) as error:
+                messagebox.showerror("Error", f"Failed to open file: {error}")
                 
     def save_file(self):
         """Save current code to a file."""
+        if self.current_file is None:
+            self.save_file_as()
+            return
+        self._write_editor_file(self.current_file)
+
+    def save_file_as(self):
+        """Save current code to a new file."""
         filename = filedialog.asksaveasfilename(
             title="Save Lua File",
             defaultextension=".lua",
             filetypes=[("Lua files", "*.lua"), ("Text files", "*.txt"), ("All files", "*.*")]
         )
         if filename:
-            try:
-                with open(filename, 'w', encoding='utf-8') as f:
-                    f.write(self.code_editor.get('1.0', 'end-1c'))
-                messagebox.showinfo("Success", "File saved successfully")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to save file: {e}")
-                
-    def save_file_as(self):
-        """Save current code to a new file."""
-        self.save_file()
+            selected_path = Path(filename)
+            if self._write_editor_file(selected_path):
+                self.current_file = selected_path
+                self._update_window_title()
+
+    def _write_editor_file(self, path: Path) -> bool:
+        """Write the editor as UTF-8 and report filesystem failures."""
+        try:
+            path.write_text(self.code_editor.get('1.0', 'end-1c'), encoding='utf-8')
+            messagebox.showinfo("Success", "File saved successfully")
+            return True
+        except (OSError, UnicodeError) as error:
+            messagebox.showerror("Error", f"Failed to save file: {error}")
+            return False
+
+    def _update_window_title(self) -> None:
+        """Show the current editor filename in the title bar."""
+        suffix = f" - {self.current_file.name}" if self.current_file else ""
+        self.root.title(f"DCS Lua Runner{suffix}")
         
     def load_lua_file(self):
         """Load a Lua file with options for how to handle existing content."""
@@ -609,8 +709,8 @@ end"""
         )
         if filename:
             try:
-                with open(filename, 'r', encoding='utf-8') as f:
-                    content = f.read()
+                loaded_path = Path(filename)
+                content = loaded_path.read_text(encoding='utf-8')
                 
                 # Check if there's existing content in the editor
                 current_content = self.code_editor.get('1.0', 'end-1c').strip()
@@ -669,6 +769,8 @@ end"""
                     if result['action'] == 'replace':
                         self.code_editor.delete('1.0', tk.END)
                         self.code_editor.insert('1.0', content)
+                        self.current_file = loaded_path
+                        self._update_window_title()
                     elif result['action'] == 'append':
                         self.code_editor.insert(tk.END, '\n\n-- Loaded from: ' + filename + '\n' + content)
                     elif result['action'] == 'insert':
@@ -679,33 +781,35 @@ end"""
                 else:
                     # No existing content, just load the file
                     self.code_editor.insert('1.0', content)
+                    self.current_file = loaded_path
+                    self._update_window_title()
                 
                 # Apply syntax highlighting
                 self.lua_highlighter.highlight_syntax()
                 
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to load file: {e}")
+            except (OSError, UnicodeError) as error:
+                messagebox.showerror("Error", f"Failed to load file: {error}")
         
     def cut_text(self):
         """Cut selected text."""
         try:
             self.code_editor.event_generate("<<Cut>>")
-        except:
-            pass
+        except tk.TclError:
+            return
             
     def copy_text(self):
         """Copy selected text."""
         try:
             self.code_editor.event_generate("<<Copy>>")
-        except:
-            pass
+        except tk.TclError:
+            return
             
     def paste_text(self):
         """Paste text from clipboard."""
         try:
             self.code_editor.event_generate("<<Paste>>")
-        except:
-            pass
+        except tk.TclError:
+            return
             
     def select_all_text(self):
         """Select all text in the editor."""
@@ -722,21 +826,31 @@ A standalone application for executing Lua code in DCS World.
 Based on the DCS Fiddle project and DCS Lua Runner VSCode extension.
 
 Features:
-• Execute Lua code on local or remote DCS servers
+• Execute Lua code through dedicated HTTPS DCS endpoints
 • Syntax highlighting for Lua code
 • Mission and GUI environment support  
-• Authentication for remote connections
+• Mutual TLS authentication
 • Configurable result formatting
 
-Version: 1.0.0"""
+Version: 2.0.0-dev"""
         messagebox.showinfo("About", about_text)
         
     def on_closing(self):
         """Handle window closing."""
-        # Save current window size
-        self.settings['window_width'] = self.root.winfo_width()
-        self.settings['window_height'] = self.root.winfo_height()
-        self.settings_manager.save_settings(self.settings)
+        self.closing = True
+        if self.ui_poll_after_id is not None:
+            try:
+                self.root.after_cancel(self.ui_poll_after_id)
+            except tk.TclError:
+                pass
+        try:
+            self._collect_settings_from_ui()
+            self.settings_manager.save_settings(self.settings)
+        except SettingsError:
+            # Invalid unsaved fields must not prevent the application from closing.
+            self.settings['window_width'] = self.root.winfo_width()
+            self.settings['window_height'] = self.root.winfo_height()
+            self.settings_manager.save_settings(self.settings)
         
         self.root.destroy()
         

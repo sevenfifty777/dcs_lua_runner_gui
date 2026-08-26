@@ -15,9 +15,9 @@ A standalone Windows GUI application for executing Lua code in DCS World, replac
 - **Persistent changes** - Effects remain until manually reverted
 
 #### **🌐 Network Exposure Risks** 
-- **Opens network ports** - DCS Fiddle server listens on network interfaces
-- **Remote code execution** - Anyone with access can run arbitrary Lua code on your system
-- **Credential vulnerabilities** - Weak authentication may be bypassed
+- **Creates loopback listeners** - Local software can reach the DCS Lua service
+- **Remote code execution** - A compromised authorized client can run arbitrary Lua
+- **Authentication is critical** - Protect and revoke client keys promptly
 - **Data exposure** - Mission files and system information may be accessible remotely
 
 #### **⚡ DCS Fiddle Specific Risks**
@@ -46,9 +46,10 @@ A standalone Windows GUI application for executing Lua code in DCS World, replac
 ## Features
 
 - **Lua Code Editor**: Syntax highlighting and line numbers for Lua code
-- **Local/Remote Execution**: Run code on local DCS instance or remote servers
+- **HTTPS Execution**: Run code through dedicated Caddy endpoints
 - **Environment Support**: Execute in Mission or GUI scripting environments
-- **Authentication**: Username/password authentication for remote servers
+- **Strong Authentication**: Mutual TLS client certificates plus a private
+  Caddy-to-DCS proxy token
 - **Result Formatting**: Display results as Lua tables or JSON
 - **Settings Persistence**: Save and load connection settings
 - **File Operations**: Open, save, and manage Lua files
@@ -62,16 +63,21 @@ This application replicates the functionality of:
 
 ## Requirements
 
-- Python 3.7 or higher
-- DCS World with DCS Fiddle server script installed
+- Python 3.10 or higher when running from source
+- DCS World with the secure Lua Runner server and external configuration installed
+- Caddy serving the Mission and Hooks endpoints over HTTPS
+- A trusted client certificate and ACL-protected unencrypted PEM private key
 - Required Python packages (see requirements.txt)
 
 ## Installation
 
-### Option 1: Windows Executable (Recommended)
-1. **Download** the latest release from the `DCS_Lua_Runner_GUI_v1.0` folder
-2. **Double-click** `DCS_Lua_Runner_GUI.exe` to start the application
-3. **Setup DCS Fiddle Server**: Follow the DCS setup instructions below
+### Option 1: Windows Executable
+
+The checked-in v1.0 executable uses the retired GET/Basic protocol and is not
+compatible with the secure server. Do not deploy it. A v2 executable must be
+rebuilt and validated from the updated source before release. A local
+`v2.0-dev` package may be produced for controlled testing, but it is not a
+production release until the Caddy and live DCS gates pass.
 
 ### Option 2: Run from Python Source
 1. **Clone or Download** this repository
@@ -84,6 +90,11 @@ This application replicates the functionality of:
    python main.py
    ```
 4. **Setup DCS Fiddle Server**: Follow the DCS setup instructions below
+
+For release builds, use an isolated virtual environment and install the fully
+resolved Windows `requirements.lock`. `requirements-build.txt` records the
+direct build inputs. The build script requires the pinned PyInstaller version
+before it will create an artifact.
 
 ## DCS Setup
 
@@ -101,7 +112,7 @@ This application replicates the functionality of:
 - 🔒 **Backup your DCS installation** before proceeding
 - 🏠 **Use on isolated/offline systems only** 
 - 👀 **Review ALL code before execution** - never run untrusted scripts
-- 🔐 **Use strong passwords** for remote access
+- 🔐 **Protect client private keys** with restrictive Windows ACLs
 - 🚪 **Disable when not needed** - re-enable sanitization after use
 - 📊 **Monitor system activity** while running scripts
 
@@ -111,7 +122,13 @@ You need to install the DCS Fiddle server script in your DCS installation:
 
 1. **Download** the `dcs-fiddle-server.lua` script (included in this repository)
 2. **Copy** to `%USERPROFILE%\Saved Games\<DCS VERSION>\Scripts\Hooks\`
-3. **⚠️ De-sanitize Mission Scripting** (edit `DCS_INSTALL\Scripts\MissionScripting.lua`):
+3. Copy `dcs-fiddle-config.lua.example` beside it as
+   `dcs-fiddle-config.lua`.
+4. Generate a cryptographically random proxy token containing at least 256 bits
+   of entropy and place it in the untracked configuration. Supply the same value
+   to the Caddy Windows service as `DCS_FIDDLE_PROXY_TOKEN`.
+5. Keep `bind_ip = "127.0.0.1"`, Mission port 12080, and Hooks port 12081.
+6. **⚠️ De-sanitize Mission Scripting** (edit `DCS_INSTALL\Scripts\MissionScripting.lua`):
    ```lua
    do
        sanitizeModule('os')
@@ -131,47 +148,28 @@ _G['package'] = nil     -- Restore this line to disable package loading
 
 ### Remote Access Configuration
 
-### 🚨 **EXTREME SECURITY RISK** 🚨
+The Lua ports must never be published. The production topology is:
 
-**Enabling remote access creates MAXIMUM SECURITY EXPOSURE:**
-
-- **🌍 INTERNET ACCESSIBLE** - Your PC becomes accessible from anywhere on the network/internet
-- **💻 REMOTE CODE EXECUTION** - Anyone with credentials can run ANY Lua code on your system
-- **🔓 UNSECURED BY DEFAULT** - Basic authentication is easily bypassed or bruted
-- **📊 DATA EXFILTRATION** - All DCS data, logs, and accessible files can be stolen
-- **🎯 ATTACK VECTOR** - Creates entry point for malicious actors
-
-**🛡️ MANDATORY SECURITY MEASURES:**
-
-1. **🔥 FIREWALL RULES** - Block port 12080 from internet, allow only specific IPs
-2. **🔐 STRONG CREDENTIALS** - Use complex passwords (20+ characters, mixed case, numbers, symbols)  
-3. **🏠 LOCAL NETWORK ONLY** - Never expose to internet (`BIND_IP = '127.0.0.1'` for local only)
-4. **📱 VPN ACCESS** - Use VPN for remote access instead of direct exposure
-5. **⏰ TIME LIMITS** - Disable when not actively needed
-6. **👀 MONITORING** - Watch logs for unauthorized access attempts
-
-**⚠️ CONFIGURATION OPTIONS:**
-
-```lua
--- SAFER: Local access only (recommended)
-FIDDLE.BIND_IP = '127.0.0.1'  -- Local computer only
-FIDDLE.PORT = 12080           
-
--- DANGEROUS: Network/Internet access (high risk)
-FIDDLE.BIND_IP = '0.0.0.0'    -- ⚠️ EXPOSES TO NETWORK/INTERNET
-FIDDLE.PORT = 12080           
-
--- MANDATORY: Strong authentication
-FIDDLE.AUTH = true                    -- ⚠️ NEVER set to false
-FIDDLE.USERNAME = 'ComplexUsername123'    -- Use unique, complex username  
-FIDDLE.PASSWORD = 'VeryLongComplexPassword456!'  -- 20+ character password
+```text
+mission.example.com     -> Caddy HTTPS + mTLS -> 127.0.0.1:12080
+dcs-lua-gui.example.com -> Caddy HTTPS + mTLS -> 127.0.0.1:12081
 ```
 
-**🔴 NEVER DO THIS:**
-```lua
-FIDDLE.AUTH = false           -- ⚠️ NEVER disable authentication
-FIDDLE.PASSWORD = 'password'  -- ⚠️ NEVER use weak passwords
-```
+Only TCP 80 and 443 are publicly allowed. TCP 3001, 8090, 12080, and 12081 are
+blocked externally. Use [deploy/Caddyfile.example](deploy/Caddyfile.example) as
+the starting point, then follow
+[docs/CADDY_MTLS_SETUP.md](docs/CADDY_MTLS_SETUP.md) and validate the active
+Caddyfile before reload.
+
+The complete design and rollout references are
+[security architecture](docs/SECURITY_ARCHITECTURE.md),
+[protocol v2](docs/PROTOCOL_V2.md),
+[v1 migration](docs/MIGRATION_V1_TO_V2.md), and
+[test/validation](docs/TEST_AND_VALIDATION.md).
+
+The GUI presents a client certificate to Caddy. Caddy injects a separate
+`X-DCS-Proxy-Token` header for the loopback Lua service. The GUI never receives
+or stores that internal token.
 
 ## Usage
 
@@ -181,8 +179,9 @@ FIDDLE.PASSWORD = 'password'  -- ⚠️ NEVER use weak passwords
    ```
 
 2. **Configure connection settings** in the Settings tab:
-   - Server address and port
-   - Authentication credentials
+   - Mission and Hooks HTTPS URLs
+   - Client certificate and private-key paths
+   - Optional private CA bundle; leave empty for normal public Web PKI
    - Execution environment preferences
    - **IMPORTANT**: Click "Save Settings" after entering all connection details to persist your configuration
 
@@ -202,14 +201,13 @@ FIDDLE.PASSWORD = 'password'  -- ⚠️ NEVER use weak passwords
 - **📁 Load File**: Load Lua file with options (replace, append, or insert at cursor)
 - **▶ Run**: Execute all code in editor
 - **▶ Selected**: Execute selected code only
-- **Local/Remote**: Toggle execution target
 - **Mission/GUI**: Toggle DCS environment
 - **Lua/JSON**: Toggle result format
 
 ### Settings Tab
-- **Connection Settings**: Server address, ports, HTTPS
-- **Authentication**: Username and password for remote access
-- **Execution Settings**: Local/remote and environment toggles
+- **Connection Settings**: Dedicated Mission and Hooks HTTPS endpoints
+- **Mutual TLS**: CA bundle, client certificate, and client private-key paths
+- **Execution Settings**: Mission or Hooks/GUI environment
 - **Display Settings**: Result format preferences
 
 ### Code Editor
@@ -269,19 +267,24 @@ end
 
 ## Configuration File
 
-Settings are automatically saved to `dcs_lua_runner_settings.json` in the application directory. This includes:
+Settings are saved to `%APPDATA%\DCSLuaRunner\settings.json`. The file contains:
 - Connection settings
-- Authentication credentials
+- Certificate and private-key paths, but no passwords, tokens, or key contents
 - Window size and preferences
 - Execution defaults
+
+When a legacy settings file is found, non-secret values are migrated and the
+legacy plaintext password file is replaced with a migration marker after the new
+settings file is saved.
 
 ## Troubleshooting
 
 ### Connection Issues
 - Verify DCS Fiddle server is running
-- Check server address and port settings
-- Ensure firewall allows connections (for remote access)
-- Verify authentication credentials
+- Check the two HTTPS endpoint settings
+- Verify Caddy can reach the loopback backend
+- Verify the client certificate chains to the CA trusted by Caddy
+- Verify the private key is readable by the current Windows user
 
 ### Script Errors
 - Check Lua syntax in the editor
@@ -289,7 +292,7 @@ Settings are automatically saved to `dcs_lua_runner_settings.json` in the applic
 - Check DCS logs for detailed error information
 
 ### Installation Issues
-- Ensure Python 3.7+ is installed
+- Ensure Python 3.10+ is installed
 - Install dependencies: `pip install -r requirements.txt`
 - Run from the correct directory
 

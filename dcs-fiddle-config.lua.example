@@ -1,0 +1,26 @@
+-- Copy this file to dcs-fiddle-config.lua beside dcs-fiddle-server.lua in:
+-- %USERPROFILE%\Saved Games\<DCS version>\Scripts\Hooks\
+--
+-- Generate proxy_token with a cryptographically secure tool. The exact same
+-- value must be supplied to Caddy through its Windows service environment as
+-- DCS_FIDDLE_PROXY_TOKEN. Never commit the populated configuration file.
+
+return {
+    bind_ip = "127.0.0.1",
+    mission_port = 12080,
+    gui_port = 12081,
+    proxy_token = "REPLACE_WITH_AT_LEAST_256_BITS_OF_RANDOM_DATA",
+
+    max_request_line_bytes = 2048,
+    max_header_bytes = 8192,
+    max_body_bytes = 262144,
+    max_response_bytes = 2097152,
+    max_clients = 8,
+    max_json_depth = 20,
+    read_chunk_bytes = 4096,
+    write_chunk_bytes = 16384,
+    incomplete_request_deadline = 5,
+    write_deadline = 5,
+    poll_interval = 0.05,
+    log_level = 1,
+}

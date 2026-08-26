@@ -12,6 +12,8 @@ License: MIT (following original DCS Fiddle licensing)
 import sys
 import os
 
+APPLICATION_VERSION = "2.0.0-dev"
+
 # Add the project root directory to Python path
 project_root = os.path.dirname(os.path.abspath(__file__))
 if project_root not in sys.path:
@@ -45,7 +47,11 @@ def check_dependencies():
 
 def main():
     """Main entry point for the DCS Lua Runner GUI application."""
-    print("DCS Lua Runner GUI v1.0.0")
+    if sys.argv[1:] == ["--version"]:
+        print(APPLICATION_VERSION)
+        return
+
+    print(f"DCS Lua Runner GUI v{APPLICATION_VERSION}")
     print("Based on DCS Fiddle project")
     print("-" * 40)
     

@@ -7,11 +7,17 @@ import tkinter as tk
 from tkinter import font
 import re
 
+from pygments import lex
+from pygments.lexers.scripting import LuaLexer
+from pygments.token import Comment, Keyword, Literal, Name, Number, Operator, Punctuation
+
 class LuaSyntaxHighlighter:
     """Provides syntax highlighting for Lua code in tkinter Text widgets."""
     
     def __init__(self, text_widget: tk.Text):
         self.text_widget = text_widget
+        self.lexer = LuaLexer()
+        self.pending_highlight: str | None = None
         self.setup_tags()
         
     def setup_tags(self):
@@ -30,129 +36,46 @@ class LuaSyntaxHighlighter:
         self.text_widget.tag_configure('operator', foreground='#D4D4D4')
         self.text_widget.tag_configure('normal', foreground='#D4D4D4')
         
-        # Lua keywords
-        self.keywords = {
-            'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for',
-            'function', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat',
-            'return', 'then', 'true', 'until', 'while'
-        }
-        
-        # Lua built-in functions
-        self.builtins = {
-            'assert', 'collectgarbage', 'dofile', 'error', 'getfenv', 'getmetatable',
-            'ipairs', 'load', 'loadfile', 'loadstring', 'next', 'pairs', 'pcall',
-            'print', 'rawequal', 'rawget', 'rawset', 'require', 'select', 'setfenv',
-            'setmetatable', 'tonumber', 'tostring', 'type', 'unpack', 'xpcall',
-            'string', 'table', 'math', 'io', 'os', 'debug'
-        }
-        
+    def schedule_highlight(self) -> None:
+        """Debounce expensive full-document lexing while the user is typing."""
+        if self.pending_highlight is not None:
+            self.text_widget.after_cancel(self.pending_highlight)
+        self.pending_highlight = self.text_widget.after(200, self._run_scheduled_highlight)
+
+    def _run_scheduled_highlight(self) -> None:
+        self.pending_highlight = None
+        self.highlight_syntax()
+
     def highlight_syntax(self, event=None):
-        """Apply syntax highlighting to the entire text."""
-        # Remove all existing tags
+        """Apply one non-overlapping Pygments token stream to the editor."""
         for tag in ['keyword', 'string', 'comment', 'number', 'function', 'operator']:
             self.text_widget.tag_remove(tag, '1.0', 'end')
-        
+
         content = self.text_widget.get('1.0', 'end-1c')
-        
-        # Highlight comments first (so they take precedence)
-        self._highlight_comments(content)
-        
-        # Highlight strings
-        self._highlight_strings(content)
-        
-        # Highlight numbers
-        self._highlight_numbers(content)
-        
-        # Highlight keywords and functions
-        self._highlight_keywords(content)
-        
-        # Highlight operators
-        self._highlight_operators(content)
-    
-    def _highlight_comments(self, content):
-        """Highlight Lua comments."""
-        # Single line comments
-        for match in re.finditer(r'--.*$', content, re.MULTILINE):
-            start_idx = self._get_text_index(content, match.start())
-            end_idx = self._get_text_index(content, match.end())
-            self.text_widget.tag_add('comment', start_idx, end_idx)
-        
-        # Multi-line comments
-        for match in re.finditer(r'--\[\[.*?\]\]', content, re.DOTALL):
-            start_idx = self._get_text_index(content, match.start())
-            end_idx = self._get_text_index(content, match.end())
-            self.text_widget.tag_add('comment', start_idx, end_idx)
-    
-    def _highlight_strings(self, content):
-        """Highlight Lua strings."""
-        # Single quoted strings
-        for match in re.finditer(r"'(?:[^'\\]|\\.)*'", content):
-            start_idx = self._get_text_index(content, match.start())
-            end_idx = self._get_text_index(content, match.end())
-            self.text_widget.tag_add('string', start_idx, end_idx)
-        
-        # Double quoted strings
-        for match in re.finditer(r'"(?:[^"\\]|\\.)*"', content):
-            start_idx = self._get_text_index(content, match.start())
-            end_idx = self._get_text_index(content, match.end())
-            self.text_widget.tag_add('string', start_idx, end_idx)
-        
-        # Long strings
-        for match in re.finditer(r'\[\[.*?\]\]', content, re.DOTALL):
-            start_idx = self._get_text_index(content, match.start())
-            end_idx = self._get_text_index(content, match.end())
-            self.text_widget.tag_add('string', start_idx, end_idx)
-    
-    def _highlight_numbers(self, content):
-        """Highlight Lua numbers."""
-        # Integers and floats
-        for match in re.finditer(r'\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b', content):
-            start_idx = self._get_text_index(content, match.start())
-            end_idx = self._get_text_index(content, match.end())
-            self.text_widget.tag_add('number', start_idx, end_idx)
-        
-        # Hexadecimal numbers
-        for match in re.finditer(r'\b0[xX][0-9a-fA-F]+\b', content):
-            start_idx = self._get_text_index(content, match.start())
-            end_idx = self._get_text_index(content, match.end())
-            self.text_widget.tag_add('number', start_idx, end_idx)
-    
-    def _highlight_keywords(self, content):
-        """Highlight Lua keywords and built-in functions."""
-        # Keywords
-        for keyword in self.keywords:
-            pattern = r'\b' + re.escape(keyword) + r'\b'
-            for match in re.finditer(pattern, content):
-                start_idx = self._get_text_index(content, match.start())
-                end_idx = self._get_text_index(content, match.end())
-                self.text_widget.tag_add('keyword', start_idx, end_idx)
-        
-        # Built-in functions
-        for builtin in self.builtins:
-            pattern = r'\b' + re.escape(builtin) + r'\b'
-            for match in re.finditer(pattern, content):
-                start_idx = self._get_text_index(content, match.start())
-                end_idx = self._get_text_index(content, match.end())
-                self.text_widget.tag_add('function', start_idx, end_idx)
-    
-    def _highlight_operators(self, content):
-        """Highlight Lua operators."""
-        operators = ['+', '-', '*', '/', '%', '^', '#', '==', '~=', '<=', '>=', 
-                    '<', '>', '=', '(', ')', '{', '}', '[', ']', ';', ':', ',', '.', '..', '...']
-        
-        for op in operators:
-            pattern = re.escape(op)
-            for match in re.finditer(pattern, content):
-                start_idx = self._get_text_index(content, match.start())
-                end_idx = self._get_text_index(content, match.end())
-                self.text_widget.tag_add('operator', start_idx, end_idx)
-    
-    def _get_text_index(self, content, char_index):
-        """Convert character index to tkinter text index (line.column)."""
-        lines = content[:char_index].split('\n')
-        line_num = len(lines)
-        col_num = len(lines[-1])
-        return f"{line_num}.{col_num}"
+        character_offset = 0
+        for token_type, token_text in lex(content, self.lexer):
+            tag = self._tag_for_token(token_type)
+            if tag and token_text:
+                start_index = f"1.0+{character_offset}c"
+                end_index = f"1.0+{character_offset + len(token_text)}c"
+                self.text_widget.tag_add(tag, start_index, end_index)
+            character_offset += len(token_text)
+
+    @staticmethod
+    def _tag_for_token(token_type):
+        if token_type in Comment:
+            return 'comment'
+        if token_type in Literal.String:
+            return 'string'
+        if token_type in Number:
+            return 'number'
+        if token_type in Keyword:
+            return 'keyword'
+        if token_type in Name.Builtin or token_type in Name.Function:
+            return 'function'
+        if token_type in Operator or token_type in Punctuation:
+            return 'operator'
+        return None
 
 class SimpleTextHighlighter:
     """Simple syntax highlighter for result display."""

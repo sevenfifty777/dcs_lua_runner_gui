@@ -1,0 +1,91 @@
+# Production template. Validate with the exact Caddy executable used by the
+# Windows service before reload. DCS_FIDDLE_PROXY_TOKEN must be supplied through
+# the Caddy service environment and must match dcs-fiddle-config.lua.
+
+dcs-dashboard.example.com {
+	reverse_proxy 127.0.0.1:3001
+}
+
+lso-dashboard.example.com {
+	reverse_proxy 127.0.0.1:8090
+}
+
+fiddle.example.com {
+	tls {
+		client_auth {
+			mode require_and_verify
+			trust_pool file C:/Caddy/pki/fiddle-client-ca.cert.pem
+		}
+	}
+
+	@execute {
+		method POST
+		path /v1/execute
+	}
+
+	@health {
+		method GET
+		path /healthz
+	}
+
+	handle @execute {
+		request_body {
+			max_size 256KB
+		}
+		reverse_proxy 127.0.0.1:12080 {
+			header_up -Authorization
+			header_up X-DCS-Proxy-Token {env.DCS_FIDDLE_PROXY_TOKEN}
+		}
+	}
+
+	handle @health {
+		reverse_proxy 127.0.0.1:12080 {
+			header_up -Authorization
+			header_up X-DCS-Proxy-Token {env.DCS_FIDDLE_PROXY_TOKEN}
+		}
+	}
+
+	handle {
+		respond "Not found" 404
+	}
+}
+
+fiddle-gui.example.com {
+	tls {
+		client_auth {
+			mode require_and_verify
+			trust_pool file C:/Caddy/pki/fiddle-client-ca.cert.pem
+		}
+	}
+
+	@execute {
+		method POST
+		path /v1/execute
+	}
+
+	@health {
+		method GET
+		path /healthz
+	}
+
+	handle @execute {
+		request_body {
+			max_size 256KB
+		}
+		reverse_proxy 127.0.0.1:12081 {
+			header_up -Authorization
+			header_up X-DCS-Proxy-Token {env.DCS_FIDDLE_PROXY_TOKEN}
+		}
+	}
+
+	handle @health {
+		reverse_proxy 127.0.0.1:12081 {
+			header_up -Authorization
+			header_up X-DCS-Proxy-Token {env.DCS_FIDDLE_PROXY_TOKEN}
+		}
+	}
+
+	handle {
+		respond "Not found" 404
+	}
+}

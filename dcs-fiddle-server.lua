@@ -1,1118 +1,999 @@
--- Note: This is a modified version of the DCS Fiddle Server to add authentication for public servers.
--- All credit goes to the original authors of DCS Fiddle: JonathanTurnock and john681611
+-- DCS Lua Runner secure server.
+-- Derived from DCS Fiddle by JonathanTurnock and john681611.
 -- License: MIT (https://github.com/JonathanTurnock/dcsfiddle)
 
-FIDDLE = {}
---=============================================================================
--- Congiguration
---=============================================================================
+local SERVER_NAME = "DCS Lua Runner"
+local PROTOCOL_VERSION = 1
+local CONFIG_FILENAME = "dcs-fiddle-config.lua"
+local SERVER_FILENAME = "dcs-fiddle-server.lua"
 
--- By default, mission env is on port 12080 and GUI env on 12081 (mission +1)
--- This is what access from https://dcsfiddle.pages.dev/ uses.
+local DEFAULT_LOG_LEVEL = 1 -- 0 = debug, 1 = info, 2 = errors only
+local log_level = DEFAULT_LOG_LEVEL
 
-FIDDLE.PORT = 12080             -- keep this at 12080 if you also want to use the DCS Fiddle website.
-FIDDLE.BIND_IP = '127.0.0.1'    -- Use '0.0.0.0' for remote access, default is '127.0.0.1'
-FIDDLE.AUTH = true              -- set to true to enable basic auth, recommended for public servers.
-FIDDLE.USERNAME = 'username'        -- username for basic auth
-FIDDLE.PASSWORD = 'password'        -- password for basic auth
-FIDDLE.BYPASS_LOCAL = false      -- allow requests to 127.0.0.1:12080-12081 without auth.
--- This local bypass allows DCS Fiddle website to still work. 
--- It uses host header to determine if the request is local.
--- This is not the most secure method and can be spoofed. Use with remote access at your own risk.
--- Use a reverse proxy for best security, 
--- see (https://github.com/omltcat/dcs-lua-runner/blob/master/INSTALL.md#script-configuration)
-
-_G.FIDDLE_LOG_LEVEL = _G.FIDDLE_LOG_LEVEL or 0    -- 0 = debug, 1 = info, 2 = errors only
-
---=============================================================================
--- End of Configuration
---=============================================================================
-
-
-
--------------------------------------------------------------------------------
--- JSON Module
--------------------------------------------------------------------------------
---[[
-Custom JSON Serialization Module that handles DCS' usage of integers as table keys such as {[1]=1, ["name"]="Enfield11", [2]=1, [3]=1} which is not valid json
-
-This is handled by encoding tables with mixed key types as objects so the above example would be
-
-{
-  "_1": 1,
-  "_2": 1,
-  "name": "Enfield11",
-  "_3": 1
-}
-
-Anything that is clearly a table is still converted to a table
-
-]]--
-
-fiddlejson = { _version = "0.2.0" }
-
--------------------------------------------------------------------------------
--- Encode
--------------------------------------------------------------------------------
-
-local encode
-
-local escape_char_map = {
-    [ "\\" ] = "\\",
-    [ "\"" ] = "\"",
-    [ "\b" ] = "b",
-    [ "\f" ] = "f",
-    [ "\n" ] = "n",
-    [ "\r" ] = "r",
-    [ "\t" ] = "t",
-}
-
-local escape_char_map_inv = { [ "/" ] = "/" }
-for k, v in pairs(escape_char_map) do
-    escape_char_map_inv[v] = k
+local function write_log(level_name, message)
+    local formatted = "[dcs-fiddle-server] - " .. tostring(message)
+    if log and log[level_name] then
+        log[level_name](formatted)
+    elseif print then
+        print(string.upper(level_name) .. " - " .. formatted)
+    end
 end
 
-
-local function escape_char(c)
-    return "\\" .. (escape_char_map[c] or string.format("u%04x", c:byte()))
+local function log_debug(message)
+    if log_level <= 0 then
+        write_log("debug", message)
+    end
 end
 
-
-local function encode_nil(val)
-    return "null"
+local function log_info(message)
+    if log_level <= 1 then
+        write_log("info", message)
+    end
 end
 
---- Checks if a given table is an array.
--- The function verifies that all keys are numeric and sequential starting from 1.
--- @param val Table to be checked.
--- @return boolean Returns true if the table is an array, otherwise false.
-local function is_table_array(val)
-    -- Check if the first element of the table is not nil or the table is empty.
-    -- These are two signs that the table might be an array.
-    if rawget(val, 1) ~= nil or next(val) == nil then
-        -- Extract all numeric keys and sort them.
-        local keys = {}
-        for k in pairs(val) do
-            if type(k) == "number" then
-                table.insert(keys, k)
-            else
-                -- If any key is not a number, the table is not an array.
-                return false
-            end
-        end
-        table.sort(keys)
+local function log_error(message)
+    write_log("error", message)
+end
 
-        -- Check the sorted keys to see if they form a continuous sequence starting from 1.
-        for i, k in ipairs(keys) do
-            if i ~= k then
-                return false
-            end
-        end
-
-        -- If all keys were numeric and in sequence, then the table is an array.
-        return true
+if not require or not package then
+    if env and env.error then
+        env.error(
+            "DCS Lua Runner requires the DCS Mission Scripting environment to expose require and package.",
+            true
+        )
     else
-        -- If the first element of the table is nil and the table isn't empty,
-        -- then it's not an array.
-        return false
+        log_error("Startup failed because require or package is unavailable")
     end
-end
-
-
-local function encode_table(val, stack)
-    local res = {}
-    stack = stack or {}
-
-    -- Circular reference?
-    if stack[val] then return '"<error: circular reference>"' end
-
-    stack[val] = true
-
-
-
-    if is_table_array(val) then
-        -- Treat as array -- check keys are valid and it is not sparse
-        -- Encode
-        for i, v in ipairs(val) do
-            table.insert(res, encode(v, stack))
-        end
-        stack[val] = nil
-        return "[" .. table.concat(res, ",") .. "]"
-
-    else
-        -- Treat as an object
-        for k, v in pairs(val) do
-            if type(k) ~= "string" then
-                table.insert(res, encode("_"..k, stack) .. ":" .. encode(v, stack))
-            else
-                table.insert(res, encode(k, stack) .. ":" .. encode(v, stack))
-            end
-        end
-        stack[val] = nil
-        return "{" .. table.concat(res, ",") .. "}"
-    end
-end
-
-
-local function encode_string(val)
-    return '"' .. val:gsub('[%z\1-\31\\"]', escape_char) .. '"'
-end
-
-
-local function encode_number(val)
-    -- Check for NaN, -inf and inf
-    if val ~= val or val <= -math.huge or val >= math.huge then
-        error("unexpected number value '" .. tostring(val) .. "'")
-    end
-    return string.format("%.14g", val)
-end
-
-local function encode_function(val)
-    return string.format('"<%s>"', tostring(val))
-end
-
-local type_func_map = {
-    [ "nil"     ] = encode_nil,
-    [ "table"   ] = encode_table,
-    [ "string"  ] = encode_string,
-    [ "number"  ] = encode_number,
-    [ "boolean" ] = tostring,
-    [ "function"] = encode_function,
-}
-
-
-encode = function(val, stack)
-    local t = type(val)
-    local f = type_func_map[t]
-    if f then
-        return f(val, stack)
-    end
-    error("unexpected type '" .. t .. "'")
-end
-
-
-function fiddlejson.encode(val)
-    return ( encode(val) )
-end
-
-
--------------------------------------------------------------------------------
--- Decode
--------------------------------------------------------------------------------
-
-local parse
-
-local function create_set(...)
-    local res = {}
-    for i = 1, select("#", ...) do
-        res[ select(i, ...) ] = true
-    end
-    return res
-end
-
-local space_chars   = create_set(" ", "\t", "\r", "\n")
-local delim_chars   = create_set(" ", "\t", "\r", "\n", "]", "}", ",")
-local escape_chars  = create_set("\\", "/", '"', "b", "f", "n", "r", "t", "u")
-local literals      = create_set("true", "false", "null")
-
-local literal_map = {
-    [ "true"  ] = true,
-    [ "false" ] = false,
-    [ "null"  ] = nil,
-}
-
-
-local function next_char(str, idx, set, negate)
-    for i = idx, #str do
-        if set[str:sub(i, i)] ~= negate then
-            return i
-        end
-    end
-    return #str + 1
-end
-
-
-local function decode_error(str, idx, msg)
-    local line_count = 1
-    local col_count = 1
-    for i = 1, idx - 1 do
-        col_count = col_count + 1
-        if str:sub(i, i) == "\n" then
-            line_count = line_count + 1
-            col_count = 1
-        end
-    end
-    error( string.format("%s at line %d col %d", msg, line_count, col_count) )
-end
-
-
-local function codepoint_to_utf8(n)
-    -- http://scripts.sil.org/cms/scripts/page.php?site_id=nrsi&id=iws-appendixa
-    local f = math.floor
-    if n <= 0x7f then
-        return string.char(n)
-    elseif n <= 0x7ff then
-        return string.char(f(n / 64) + 192, n % 64 + 128)
-    elseif n <= 0xffff then
-        return string.char(f(n / 4096) + 224, f(n % 4096 / 64) + 128, n % 64 + 128)
-    elseif n <= 0x10ffff then
-        return string.char(f(n / 262144) + 240, f(n % 262144 / 4096) + 128,
-                f(n % 4096 / 64) + 128, n % 64 + 128)
-    end
-    error( string.format("invalid unicode codepoint '%x'", n) )
-end
-
-
-local function parse_unicode_escape(s)
-    local n1 = tonumber( s:sub(1, 4),  16 )
-    local n2 = tonumber( s:sub(7, 10), 16 )
-    -- Surrogate pair?
-    if n2 then
-        return codepoint_to_utf8((n1 - 0xd800) * 0x400 + (n2 - 0xdc00) + 0x10000)
-    else
-        return codepoint_to_utf8(n1)
-    end
-end
-
-
-local function parse_string(str, i)
-    local res = ""
-    local j = i + 1
-    local k = j
-
-    while j <= #str do
-        local x = str:byte(j)
-
-        if x < 32 then
-            decode_error(str, j, "control character in string")
-
-        elseif x == 92 then -- `\`: Escape
-            res = res .. str:sub(k, j - 1)
-            j = j + 1
-            local c = str:sub(j, j)
-            if c == "u" then
-                local hex = str:match("^[dD][89aAbB]%x%x\\u%x%x%x%x", j + 1)
-                        or str:match("^%x%x%x%x", j + 1)
-                        or decode_error(str, j - 1, "invalid unicode escape in string")
-                res = res .. parse_unicode_escape(hex)
-                j = j + #hex
-            else
-                if not escape_chars[c] then
-                    decode_error(str, j - 1, "invalid escape char '" .. c .. "' in string")
-                end
-                res = res .. escape_char_map_inv[c]
-            end
-            k = j + 1
-
-        elseif x == 34 then -- `"`: End of string
-            res = res .. str:sub(k, j - 1)
-            return res, j + 1
-        end
-
-        j = j + 1
-    end
-
-    decode_error(str, i, "expected closing quote for string")
-end
-
-
-local function parse_number(str, i)
-    local x = next_char(str, i, delim_chars)
-    local s = str:sub(i, x - 1)
-    local n = tonumber(s)
-    if not n then
-        decode_error(str, i, "invalid number '" .. s .. "'")
-    end
-    return n, x
-end
-
-
-local function parse_literal(str, i)
-    local x = next_char(str, i, delim_chars)
-    local word = str:sub(i, x - 1)
-    if not literals[word] then
-        decode_error(str, i, "invalid literal '" .. word .. "'")
-    end
-    return literal_map[word], x
-end
-
-
-local function parse_array(str, i)
-    local res = {}
-    local n = 1
-    i = i + 1
-    while 1 do
-        local x
-        i = next_char(str, i, space_chars, true)
-        -- Empty / end of array?
-        if str:sub(i, i) == "]" then
-            i = i + 1
-            break
-        end
-        -- Read token
-        x, i = parse(str, i)
-        res[n] = x
-        n = n + 1
-        -- Next token
-        i = next_char(str, i, space_chars, true)
-        local chr = str:sub(i, i)
-        i = i + 1
-        if chr == "]" then break end
-        if chr ~= "," then decode_error(str, i, "expected ']' or ','") end
-    end
-    return res, i
-end
-
-local function set_table(res, key, val)
-    -- Check if the key starts with an underscore
-    if string.sub(key, 1, 1) == "_" then
-        -- Remove the underscore and try to convert the rest to a number
-        local numKey = tonumber(string.sub(key, 2))
-
-        -- If the result is not nil, meaning the conversion was successful
-        if numKey then
-            -- Update the table with the number key instead of the string key
-            res[numKey] = val
-        end
-    else
-        -- If the key does not start with an underscore, just use it as is
-        res[key] = val
-    end
-end
-
-local function parse_object(str, i)
-    local res = {}
-    i = i + 1
-    while 1 do
-        local key, val
-        i = next_char(str, i, space_chars, true)
-        -- Empty / end of object?
-        if str:sub(i, i) == "}" then
-            i = i + 1
-            break
-        end
-        -- Read key
-        if str:sub(i, i) ~= '"' then
-            decode_error(str, i, "expected string for key")
-        end
-        key, i = parse(str, i)
-        -- Read ':' delimiter
-        i = next_char(str, i, space_chars, true)
-        if str:sub(i, i) ~= ":" then
-            decode_error(str, i, "expected ':' after key")
-        end
-        i = next_char(str, i + 1, space_chars, true)
-        -- Read value
-        val, i = parse(str, i)
-        -- Set
-        --res[key] = val
-        set_table(res, key, val)
-        -- Next token
-        i = next_char(str, i, space_chars, true)
-        local chr = str:sub(i, i)
-        i = i + 1
-        if chr == "}" then break end
-        if chr ~= "," then decode_error(str, i, "expected '}' or ','") end
-    end
-    return res, i
-end
-
-
-local char_func_map = {
-    [ '"' ] = parse_string,
-    [ "0" ] = parse_number,
-    [ "1" ] = parse_number,
-    [ "2" ] = parse_number,
-    [ "3" ] = parse_number,
-    [ "4" ] = parse_number,
-    [ "5" ] = parse_number,
-    [ "6" ] = parse_number,
-    [ "7" ] = parse_number,
-    [ "8" ] = parse_number,
-    [ "9" ] = parse_number,
-    [ "-" ] = parse_number,
-    [ "t" ] = parse_literal,
-    [ "f" ] = parse_literal,
-    [ "n" ] = parse_literal,
-    [ "[" ] = parse_array,
-    [ "{" ] = parse_object,
-}
-
-
-parse = function(str, idx)
-    local chr = str:sub(idx, idx)
-    local f = char_func_map[chr]
-    if f then
-        return f(str, idx)
-    end
-    decode_error(str, idx, "unexpected character '" .. chr .. "'")
-end
-
-
-function fiddlejson.decode(str)
-    if type(str) ~= "string" then
-        error("expected argument of type string, got " .. type(str))
-    end
-    local res, idx = parse(str, next_char(str, 1, space_chars, true))
-    idx = next_char(str, idx, space_chars, true)
-    if idx <= #str then
-        decode_error(str, idx, "trailing garbage")
-    end
-    return res
-end
-
---[[
- base64 -- v1.5.3 public domain Lua base64 encoder/decoder
- no warranty implied; use at your own risk
- Needs bit32.extract function. If not present it's implemented using BitOp
- or Lua 5.3 native bit operators. For Lua 5.1 fallbacks to pure Lua
- implementation inspired by Rici Lake's post:
-   http://ricilake.blogspot.co.uk/2007/10/iterating-bits-in-lua.html
- author: Ilya Kolbin (iskolbin@gmail.com)
- url: github.com/iskolbin/lbase64
- COMPATIBILITY
- Lua 5.1+, LuaJIT
- LICENSE
- See end of file for license information.
---]]
-
-local base64 = {}
-
--- local extract = _G.bit32 and _G.bit32.extract -- Lua 5.2/Lua 5.3 in compatibility mode
--- if not extract then
---     if _G.bit then
---         -- LuaJIT
---         local shl, shr, band = _G.bit.lshift, _G.bit.rshift, _G.bit.band
---         extract = function(v, from, width)
---             return band(shr(v, from), shl(1, width) - 1)
---         end
---     elseif _G._VERSION == "Lua 5.1" then
---         extract = function(v, from, width)
---             local w = 0
---             local flag = 2 ^ from
---             for i = 0, width - 1 do
---                 local flag2 = flag + flag
---                 if v % flag2 >= flag then
---                     w = w + 2 ^ i
---                 end
---                 flag = flag2
---             end
---             return w
---         end
---     else
---         -- Lua 5.3+
---         extract = load [[return function( v, from, width )
--- 			return ( v >> from ) & ((1 << width) - 1)
--- 		end]]()
---     end
--- end
-
-local extract = function(v, from, width)
-    local w = 0
-    local flag = 2 ^ from
-    for i = 0, width - 1 do
-        local flag2 = flag + flag
-        if v % flag2 >= flag then
-            w = w + 2 ^ i
-        end
-        flag = flag2
-    end
-    return w
-end
-
-function base64.makeencoder(s62, s63, spad)
-    local encoder = {}
-    for b64code, char in pairs { [0] = 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
-                                 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y',
-                                 'Z', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
-                                 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2',
-                                 '3', '4', '5', '6', '7', '8', '9', s62 or '+', s63 or '/', spad or '=' } do
-        encoder[b64code] = char:byte()
-    end
-    return encoder
-end
-
-function base64.makedecoder(s62, s63, spad)
-    local decoder = {}
-    for b64code, charcode in pairs(base64.makeencoder(s62, s63, spad)) do
-        decoder[charcode] = b64code
-    end
-    return decoder
-end
-
-local DEFAULT_ENCODER = base64.makeencoder()
-local DEFAULT_DECODER = base64.makedecoder()
-
-local char, concat = string.char, table.concat
-
-function base64.encode(str, encoder, usecaching)
-    encoder = encoder or DEFAULT_ENCODER
-    local t, k, n = {}, 1, #str
-    local lastn = n % 3
-    local cache = {}
-    for i = 1, n - lastn, 3 do
-        local a, b, c = str:byte(i, i + 2)
-        local v = a * 0x10000 + b * 0x100 + c
-        local s
-        if usecaching then
-            s = cache[v]
-            if not s then
-                s = char(encoder[extract(v, 18, 6)], encoder[extract(v, 12, 6)], encoder[extract(v, 6, 6)], encoder[extract(v, 0, 6)])
-                cache[v] = s
-            end
-        else
-            s = char(encoder[extract(v, 18, 6)], encoder[extract(v, 12, 6)], encoder[extract(v, 6, 6)], encoder[extract(v, 0, 6)])
-        end
-        t[k] = s
-        k = k + 1
-    end
-    if lastn == 2 then
-        local a, b = str:byte(n - 1, n)
-        local v = a * 0x10000 + b * 0x100
-        t[k] = char(encoder[extract(v, 18, 6)], encoder[extract(v, 12, 6)], encoder[extract(v, 6, 6)], encoder[64])
-    elseif lastn == 1 then
-        local v = str:byte(n) * 0x10000
-        t[k] = char(encoder[extract(v, 18, 6)], encoder[extract(v, 12, 6)], encoder[64], encoder[64])
-    end
-    return concat(t)
-end
-
-function base64.decode(b64, decoder, usecaching)
-    decoder = decoder or DEFAULT_DECODER
-    local pattern = '[^%w%+%/%=]'
-    if decoder then
-        local s62, s63
-        for charcode, b64code in pairs(decoder) do
-            if b64code == 62 then
-                s62 = charcode
-            elseif b64code == 63 then
-                s63 = charcode
-            end
-        end
-        pattern = ('[^%%w%%%s%%%s%%=]'):format(char(s62), char(s63))
-    end
-    b64 = b64:gsub(pattern, '')
-    local cache = usecaching and {}
-    local t, k = {}, 1
-    local n = #b64
-    local padding = b64:sub(-2) == '==' and 2 or b64:sub(-1) == '=' and 1 or 0
-    for i = 1, padding > 0 and n - 4 or n, 4 do
-        local a, b, c, d = b64:byte(i, i + 3)
-        local s
-        if usecaching then
-            local v0 = a * 0x1000000 + b * 0x10000 + c * 0x100 + d
-            s = cache[v0]
-            if not s then
-                local v = decoder[a] * 0x40000 + decoder[b] * 0x1000 + decoder[c] * 0x40 + decoder[d]
-                s = char(extract(v, 16, 8), extract(v, 8, 8), extract(v, 0, 8))
-                cache[v0] = s
-            end
-        else
-            local v = decoder[a] * 0x40000 + decoder[b] * 0x1000 + decoder[c] * 0x40 + decoder[d]
-            s = char(extract(v, 16, 8), extract(v, 8, 8), extract(v, 0, 8))
-        end
-        t[k] = s
-        k = k + 1
-    end
-    if padding == 1 then
-        local a, b, c = b64:byte(n - 3, n - 1)
-        local v = decoder[a] * 0x40000 + decoder[b] * 0x1000 + decoder[c] * 0x40
-        t[k] = char(extract(v, 16, 8), extract(v, 8, 8))
-    elseif padding == 2 then
-        local a, b = b64:byte(n - 3, n - 2)
-        local v = decoder[a] * 0x40000 + decoder[b] * 0x1000
-        t[k] = char(extract(v, 16, 8))
-    end
-    return concat(t)
-end
-
---[[
-------------------------------------------------------------------------------
-This software is available under 2 licenses -- choose whichever you prefer.
-------------------------------------------------------------------------------
-ALTERNATIVE A - MIT License
-Copyright (c) 2018 Ilya Kolbin
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-of the Software, and to permit persons to whom the Software is furnished to do
-so, subject to the following conditions:
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-------------------------------------------------------------------------------
-ALTERNATIVE B - Public Domain (www.unlicense.org)
-This is free and unencumbered software released into the public domain.
-Anyone is free to copy, modify, publish, use, compile, sell, or distribute this
-software, either in source code form or as a compiled binary, for any purpose,
-commercial or non-commercial, and by any means.
-In jurisdictions that recognize copyright laws, the author or authors of this
-software dedicate any and all copyright interest in the software to the public
-domain. We make this dedication for the benefit of the public at large and to
-the detriment of our heirs and successors. We intend this dedication to be an
-overt act of relinquishment in perpetuity of all present and future rights to
-this software under copyright law.
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
-ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-------------------------------------------------------------------------------
---]]
-
-local function dumpt(t)
-    if type(t) == 'table' then
-        local s = '{ '
-        for k, v in pairs(t) do
-            if type(k) ~= 'number' then
-                k = '"' .. k .. '"'
-            end
-            s = s .. '[' .. k .. '] = ' .. dumpt(v) .. ','
-        end
-        return s .. '} '
-    else
-        return tostring(t)
-    end
-end
-
-
-------------------------------------------------------------------------------------------------------------------------
---- Logger
-------------------------------------------------------------------------------------------------------------------------
-
-local __debug = function(message)
-    if FIDDLE_LOG_LEVEL > 0 then return end
-    message = '[dcs-fiddle-server] - ' .. message
-    if (log and log.debug) then
-        log.debug(message)
-    else
-        print('DEBUG - ' .. message)
-    end
-end
-
-local __info = function(message)
-    if FIDDLE_LOG_LEVEL > 1 then return end
-    message = '[dcs-fiddle-server] - ' .. message
-    if (log and log.info) then
-        log.info(message)
-    else
-        print('INFO - ' .. message)
-    end
-end
-
-local __error = function(message)
-    message = '[dcs-fiddle-server] - ' .. message
-    if (log and log.error) then
-        log.error(message)
-    else
-        print('ERROR - ' .. message)
-    end
-end
-
-------------------------------------------------------------------------------------------------------------------------
---- DCS Instruction Handler
-------------------------------------------------------------------------------------------------------------------------
-
-local IS_DCS = false
-
-------------------------------------------------------------------------------------------------------------------------
---- Takes a LUA string, executes it and returns the result as a JSON string
----@param env string Environment to run the lua string within
----
-local function handle_request(luastring, env)
-    __info("[handle_request] - Handling request to execute string in " .. env)
-
-    if (env ~= "default") then
-        __info("[handle_request] - Executing string via dostring_in")
-        local str, err = net.dostring_in(env, luastring)
-        if (err) then
-            __error(string.format("Error while executing string in %s\n%s", env, str))
-        end
-        return str
-    else
-        __info("[handle_request] - Loading LUA String...")
-        local loaded = assert(loadstring(luastring))
-
-        __info("[handle_request] - Executing LUA String...")
-        local result = loaded()
-
-        __info("[handle_request] - Processing result...")
-        return result
-    end
-end
-------------------------------------------------------------------------------------------------------------------------
---- Url
---- https://developer.mozilla.org/en-US/docs/Learn/Common_questions/What_is_a_URL
-------------------------------------------------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------------------------------------------------
---- Parses the given url and returns a URL table
----
---- `{ parameters={sort="asc", size=20}, path="/employees" }`
----
---- @param original_url string - The Original Request URL i.e. `/employees?sort=asc&size=20`
---- @return string, table? - Returns the path part alongside a table of parsed parameters
----
-local function parse_url(original_url)
-    local resource_path, parameters = original_url:match('(.+)?(.*)')
-    if (parameters) then
-        local params = {}
-        for parameter in string.gmatch(parameters, "[^&]+") do
-            local name, value = parameter:match('(.+)=(.+)')
-            params[name] = value
-        end
-
-        return resource_path, params
-    end
-    return original_url
-end
-
-------------------------------------------------------------------------------------------------------------------------
---- HTTP Receiver
-------------------------------------------------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------------------------------------------------
---- Reads HTTP Message from the given connection
----
---- @see https://developer.mozilla.org/en-US/docs/Web/HTTP/Messages
---- @see https://lunarmodules.github.io/luasocket/tcp.html#accept
---- @param client TCPSocket LUA Socket Lib Client
---- @return table?, number? Request - table containing method, original_url, protocol, path, parameters, body, headers. Optionally returns a second item representing an error_code from the match_headers failing
-local function receive_http(client)
-    local request = {}
-    __debug("receiving start-line")
-    local received, err = client:receive("*l")
-
-    if err or not received then
-        __error("Failed to get start-line due to " .. err)
-        return
-    end
-
-    __debug("parsing start-line")
-    local method, original_url, protocol = string.match(received, "(%S+) (%S+) (%S+)")
-    request.method = method
-    request.original_url = original_url
-    request.protocol = protocol
-
-    __debug("parsing url")
-    local path, parameters = parse_url(original_url)
-    request.path = path
-    request.parameters = parameters
-
-    request.authOK = false
-    if FIDDLE.AUTH then
-        __debug("parsing headers for auth")
-        local headers = {}
-        while true do
-            local line = client:receive()
-            if not line or line == "" then break end
-            local name, value = line:match("^([^:]+):%s*(.*)$")
-            headers[name] = value
-        end
-        local auth_header = headers["Authorization"]
-        local host_header = headers['X-Forwarded-Host'] or headers["Host"]
-        if FIDDLE.BYPASS_LOCAL and (host_header == '127.0.0.1:12080' or host_header == '127.0.0.1:12081') then
-            request.authOK = true
-        elseif auth_header then
-            local encoded_username_password = auth_header:match("^Basic%s+(.*)$")
-            if encoded_username_password then
-                local decoded_username_password = base64.decode(encoded_username_password)
-                local username, password = decoded_username_password:match("^(.*):(.*)$")
-                -- __info(decoded_username_password)
-                if username == FIDDLE.USERNAME and password == FIDDLE.PASSWORD then
-                    -- __info("Auth Passed")
-                    request.authOK = true
-                end
-            end
-        end
-    else
-        request.authOK = true
-    end
-
-    __debug("request completed")
-    return request
-end
-
-------------------------------------------------------------------------------------------------------------------------
---- HTTP Sender
-------------------------------------------------------------------------------------------------------------------------
-
-local EMPTY_LINE = ""
-local CRLF = "\r\n"
-
-local status_text = {
-    [100] = "Continue",
-    [101] = "Switching protocols",
-    [102] = "Processing",
-    [103] = "Early Hints",
-    [200] = "OK",
-    [201] = "Created",
-    [202] = "Accepted",
-    [203] = "Non-Authoritative Information",
-    [204] = "No Content",
-    [205] = "Reset Content",
-    [206] = "Partial Content",
-    [207] = "Multi-Status",
-    [208] = "Already Reported",
-    [226] = "IM Used",
-    [300] = "Multiple Choices",
-    [301] = "Moved Permanently",
-    [302] = "Found (Previously \"Moved Temporarily\")",
-    [303] = "See Other",
-    [304] = "Not Modified",
-    [305] = "Use Proxy",
-    [306] = "Switch Proxy",
-    [307] = "Temporary Redirect",
-    [308] = "Permanent Redirect",
-    [400] = "Bad Request",
-    [401] = "Unauthorized",
-    [402] = "Payment Required",
-    [403] = "Forbidden",
-    [404] = "Not Found",
-    [405] = "Method Not Allowed",
-    [406] = "Not Acceptable",
-    [407] = "Proxy Authentication Required",
-    [408] = "Request Timeout",
-    [409] = "Conflict",
-    [410] = "Gone",
-    [411] = "Length Required",
-    [412] = "Precondition Failed",
-    [413] = "Payload Too Large",
-    [414] = "URI Too Long",
-    [415] = "Unsupported Media Type",
-    [416] = "Range Not Satisfiable",
-    [417] = "Expectation Failed",
-    [418] = "I'm a Teapot",
-    [421] = "Misdirected Request",
-    [422] = "Unprocessable Entity",
-    [423] = "Locked",
-    [424] = "Failed Dependency",
-    [425] = "Too Early",
-    [426] = "Upgrade Required",
-    [428] = "Precondition Required",
-    [429] = "Too Many Requests",
-    [431] = "Request Header Fields Too Large",
-    [451] = "Unavailable For Legal Reasons",
-    [500] = "Internal Server Error",
-    [501] = "Not Implemented",
-    [502] = "Bad Gateway",
-    [503] = "Service Unavailable",
-    [504] = "Gateway Timeout",
-    [505] = "HTTP Version Not Supported",
-    [506] = "Variant Also Negotiates",
-    [507] = "Insufficient Storage",
-    [508] = "Loop Detected",
-    [510] = "Not Extended",
-    [511] = "Network Authentication Required"
-}
-
-------------------------------------------------------------------------------------------------------------------------
---- Writes HTTP Message to the given connection using the given response object
----
---- @see https://developer.mozilla.org/en-US/docs/Web/HTTP/Messages
---- @param client TCPSocket @see https://lunarmodules.github.io/luasocket/tcp.html
---- @param response table response table containing 'status' and 'body'
-local function send_http(client, response)
-    local start_line = table.concat({ "HTTP/1.1", response.status, status_text[response.status] }, " ")
-
-    local headers = { "Server: DCS Fiddle Server HTTP/1.1" }
-
-    for name, value in pairs(response.headers) do
-        table.insert(headers, name .. ": " .. value)
-    end
-
-    local response_string
-    if (response.body) then
-        response_string = table.concat({ start_line, table.concat(headers, CRLF), EMPTY_LINE, response.body }, CRLF)
-    else
-        response_string = table.concat({ start_line, table.concat(headers, CRLF), EMPTY_LINE, EMPTY_LINE }, CRLF)
-    end
-
-    __info("Sending HTTP Response")
-    --__debug(">> " .. response_string)
-    local index, err = client:send(response_string)
-    if (err) then
-        __error("Failed to fully send due to: " .. err)
-    else
-        __info("Successfully sent response")
-    end
-end
-
-------------------------------------------------------------------------------------------------------------------------
---- HTTP Server
-------------------------------------------------------------------------------------------------------------------------
-if (not require or not package) then
-    if (env and env.error) then
-        env.error("DCS Fiddle failed to inject into the mission scripting environment as require or package was not found.\n\nPlease follow the installation docs to de-sanitize the mission scripting environment\nhttps://dcsfiddle.pages.dev/docs", true)
-        return
-    end
+    return
 end
 
 package.path = package.path .. ";.\\LuaSocket\\?.lua"
 package.cpath = package.cpath .. ";.\\LuaSocket\\?.dll"
 
-local socket = require("socket")
-
-local clients = {}
-local tcp_server
-
-local server_config = { cors = "*" }
-
-local client_id_seq = 1
-
-local OK = 200
-
-local BAD_REQUEST = 400
-
-local INTERNAL_SERVER_ERROR = 500
-local METHOD_NOT_ALLOWED = 405
-local UNAUTHORIZED = 401
-
------------------------------------------------------------------------------------------------------------------------
---- Gets and returns a client id incrementing the sequence
-local function get_client_id()
-    local id = client_id_seq
-    client_id_seq = client_id_seq + 1
-    return id
+local socket_ok, socket = pcall(require, "socket")
+if not socket_ok or not socket then
+    log_error("Startup failed because LuaSocket could not be loaded")
+    return
 end
 
-local function handle_client_connection(client)
-    -- Dictionary of Headers that need to match, failure to match fails the read operation and returns the error code
-    local response = { status = INTERNAL_SERVER_ERROR, headers = { ["Content-Type"] = "application/json"} }
+local function resolve_hooks_directory()
+    local file_system = rawget(_G, "lfs")
+    if not file_system then
+        local loaded, module = pcall(require, "lfs")
+        if loaded then
+            file_system = module
+        end
+    end
 
-    local request = receive_http(client)
+    if not file_system or type(file_system.writedir) ~= "function" then
+        return nil, "LuaFileSystem writedir() is unavailable"
+    end
 
-    if (request) then
-        if (request.method ~= "GET") then
-            response.status = METHOD_NOT_ALLOWED
-        elseif not request.authOK then
-            __info("Request Unauthorized")
-            response.status = UNAUTHORIZED
+    return file_system.writedir() .. "Scripts\\Hooks\\"
+end
+
+local function is_integer(value)
+    return type(value) == "number" and value == math.floor(value)
+end
+
+local function require_integer(raw, name, minimum, maximum)
+    local value = rawget(raw, name)
+    if not is_integer(value) or value < minimum or value > maximum then
+        error(string.format("%s must be an integer from %d through %d", name, minimum, maximum))
+    end
+    return value
+end
+
+local function require_number(raw, name, minimum, maximum)
+    local value = rawget(raw, name)
+    if type(value) ~= "number" or value < minimum or value > maximum then
+        error(string.format("%s must be a number from %s through %s", name, minimum, maximum))
+    end
+    return value
+end
+
+local function validate_config(raw)
+    if type(raw) ~= "table" or getmetatable(raw) ~= nil then
+        error("configuration must return a plain Lua table")
+    end
+
+    local bind_ip = rawget(raw, "bind_ip")
+    if bind_ip ~= "127.0.0.1" then
+        error("bind_ip must be 127.0.0.1; remote interfaces are not permitted")
+    end
+
+    local proxy_token = rawget(raw, "proxy_token")
+    if type(proxy_token) ~= "string" or #proxy_token < 43 or #proxy_token > 128 then
+        error("proxy_token must contain 43 through 128 base64url characters")
+    end
+    if not proxy_token:match("^[A-Za-z0-9_-]+$") then
+        error("proxy_token must use unpadded base64url characters")
+    end
+    if proxy_token:find("CHANGE", 1, true) or proxy_token:find("REPLACE", 1, true) then
+        error("proxy_token still contains a placeholder value")
+    end
+
+    local config = {
+        bind_ip = bind_ip,
+        mission_port = require_integer(raw, "mission_port", 1, 65535),
+        gui_port = require_integer(raw, "gui_port", 1, 65535),
+        proxy_token = proxy_token,
+        max_request_line_bytes = require_integer(raw, "max_request_line_bytes", 256, 8192),
+        max_header_bytes = require_integer(raw, "max_header_bytes", 1024, 65536),
+        max_body_bytes = require_integer(raw, "max_body_bytes", 1, 1048576),
+        max_response_bytes = require_integer(raw, "max_response_bytes", 1024, 8388608),
+        max_clients = require_integer(raw, "max_clients", 1, 64),
+        max_json_depth = require_integer(raw, "max_json_depth", 1, 64),
+        read_chunk_bytes = require_integer(raw, "read_chunk_bytes", 256, 65536),
+        write_chunk_bytes = require_integer(raw, "write_chunk_bytes", 256, 65536),
+        incomplete_request_deadline = require_number(raw, "incomplete_request_deadline", 0.5, 60),
+        write_deadline = require_number(raw, "write_deadline", 0.5, 60),
+        poll_interval = require_number(raw, "poll_interval", 0.01, 1),
+        log_level = require_integer(raw, "log_level", 0, 2),
+    }
+
+    if config.mission_port == config.gui_port then
+        error("mission_port and gui_port must be different")
+    end
+
+    return config
+end
+
+local function load_external_config()
+    local injected = rawget(_G, "DCS_FIDDLE_CONFIG")
+    _G.DCS_FIDDLE_CONFIG = nil
+    if injected ~= nil then
+        return validate_config(injected), nil
+    end
+
+    local hooks_directory, directory_error = resolve_hooks_directory()
+    if not hooks_directory then
+        error(directory_error)
+    end
+
+    local config_path = hooks_directory .. CONFIG_FILENAME
+    local config_chunk, load_error = loadfile(config_path)
+    if not config_chunk then
+        error("unable to load " .. CONFIG_FILENAME .. ": " .. tostring(load_error))
+    end
+
+    local executed, raw_config = pcall(config_chunk)
+    if not executed then
+        error("unable to evaluate " .. CONFIG_FILENAME .. ": " .. tostring(raw_config))
+    end
+
+    return validate_config(raw_config), hooks_directory
+end
+
+local config_ok, config_or_error, hooks_directory = pcall(load_external_config)
+if not config_ok then
+    log_error("Secure configuration rejected: " .. tostring(config_or_error))
+    return
+end
+
+local config = config_or_error
+log_level = config.log_level
+
+local function is_valid_utf8(value)
+    local index = 1
+    local length = #value
+
+    while index <= length do
+        local first = value:byte(index)
+        if first <= 0x7F then
+            index = index + 1
         else
-            __info("Handling Request")
-            local success, res = pcall(base64.decode, string.sub(request.path, 2))
-            if (not success) then
-                __error("Failed to read input due to " .. res)
-                response.status = BAD_REQUEST
+            local continuation_count
+            local second_minimum = 0x80
+            local second_maximum = 0xBF
+
+            if first >= 0xC2 and first <= 0xDF then
+                continuation_count = 1
+            elseif first == 0xE0 then
+                continuation_count = 2
+                second_minimum = 0xA0
+            elseif first >= 0xE1 and first <= 0xEC then
+                continuation_count = 2
+            elseif first == 0xED then
+                continuation_count = 2
+                second_maximum = 0x9F
+            elseif first >= 0xEE and first <= 0xEF then
+                continuation_count = 2
+            elseif first == 0xF0 then
+                continuation_count = 3
+                second_minimum = 0x90
+            elseif first >= 0xF1 and first <= 0xF3 then
+                continuation_count = 3
+            elseif first == 0xF4 then
+                continuation_count = 3
+                second_maximum = 0x8F
             else
-                local env = request.parameters and request.parameters.env
-                __info("Processing Command " .. res)
-                local success, res = pcall(handle_request, res, env)
-                if (not success) then
-                    __error("Failed to handle request due to \n" .. res)
-                    response.body = fiddlejson.encode({error=tostring(res)})
-                    response.status = INTERNAL_SERVER_ERROR
-                else
-                    __info("Handled request")
-                    response.body = fiddlejson.encode({result=res})
-                    response.status = OK
+                return false
+            end
+
+            if index + continuation_count > length then
+                return false
+            end
+            local second = value:byte(index + 1)
+            if second < second_minimum or second > second_maximum then
+                return false
+            end
+            for offset = 2, continuation_count do
+                local continuation = value:byte(index + offset)
+                if continuation < 0x80 or continuation > 0xBF then
+                    return false
+                end
+            end
+            index = index + continuation_count + 1
+        end
+    end
+
+    return true
+end
+
+local function json_escape(value)
+    local escapes = {
+        ["\\"] = "\\\\",
+        ["\""] = "\\\"",
+        ["\b"] = "\\b",
+        ["\f"] = "\\f",
+        ["\n"] = "\\n",
+        ["\r"] = "\\r",
+        ["\t"] = "\\t",
+    }
+
+    return '"' .. value:gsub('[%z\1-\31\\"]', function(character)
+        return escapes[character] or string.format("\\u%04x", character:byte())
+    end) .. '"'
+end
+
+local function encode_number(value)
+    if value ~= value or value == math.huge or value == -math.huge then
+        error("non-finite number at result value")
+    end
+    return string.format("%.14g", value)
+end
+
+local function table_shape(value)
+    local count = 0
+    local maximum = 0
+    local array_candidate = true
+    local string_keys_only = true
+    local uses_reserved_envelope_key = false
+
+    for key in pairs(value) do
+        count = count + 1
+        if type(key) == "number" and key >= 1 and key == math.floor(key) then
+            if key > maximum then
+                maximum = key
+            end
+        else
+            array_candidate = false
+        end
+        if type(key) ~= "string" then
+            string_keys_only = false
+        elseif key == "__dcs_type" then
+            uses_reserved_envelope_key = true
+        end
+    end
+
+    if count == 0 then
+        return "array", 0
+    end
+    if array_candidate and maximum == count then
+        return "array", maximum
+    end
+    if string_keys_only and not uses_reserved_envelope_key then
+        return "object", count
+    end
+    return "typed", count
+end
+
+local function compare_typed_entries(left, right)
+    local ranks = { number = 1, string = 2, boolean = 3 }
+    local left_type = type(left.key)
+    local right_type = type(right.key)
+    if left_type ~= right_type then
+        return (ranks[left_type] or 99) < (ranks[right_type] or 99)
+    end
+    if left_type == "number" then
+        return left.key < right.key
+    end
+    return tostring(left.key) < tostring(right.key)
+end
+
+local encode_json_value
+
+local function encode_json_table(value, stack, path, depth)
+    if stack[value] then
+        error("circular reference at " .. path .. " (first seen at " .. stack[value] .. ")")
+    end
+    if depth > config.max_json_depth then
+        error("maximum result depth exceeded at " .. path)
+    end
+
+    stack[value] = path
+    local shape, length = table_shape(value)
+    local encoded
+
+    if shape == "array" then
+        local items = {}
+        for index = 1, length do
+            items[index] = encode_json_value(value[index], stack, path .. "[" .. index .. "]", depth + 1)
+        end
+        encoded = "[" .. table.concat(items, ",") .. "]"
+    elseif shape == "object" then
+        local keys = {}
+        for key in pairs(value) do
+            table.insert(keys, key)
+        end
+        table.sort(keys)
+
+        local fields = {}
+        for _, key in ipairs(keys) do
+            if not is_valid_utf8(key) then
+                error("invalid UTF-8 table key at " .. path)
+            end
+            table.insert(
+                fields,
+                json_escape(key) .. ":" .. encode_json_value(value[key], stack, path .. "." .. key, depth + 1)
+            )
+        end
+        encoded = "{" .. table.concat(fields, ",") .. "}"
+    else
+        local entries = {}
+        for key, entry_value in pairs(value) do
+            local key_type = type(key)
+            if key_type ~= "number" and key_type ~= "string" and key_type ~= "boolean" then
+                error("unsupported table key type " .. key_type .. " at " .. path)
+            end
+            if key_type == "number" then
+                encode_number(key)
+            end
+            table.insert(entries, { key = key, value = entry_value })
+        end
+        table.sort(entries, compare_typed_entries)
+
+        local encoded_entries = {}
+        for _, entry in ipairs(entries) do
+            local key_type = type(entry.key)
+            local encoded_key
+            if key_type == "string" then
+                if not is_valid_utf8(entry.key) then
+                    error("invalid UTF-8 table key at " .. path)
+                end
+                encoded_key = json_escape(entry.key)
+            elseif key_type == "number" then
+                encoded_key = encode_number(entry.key)
+            else
+                encoded_key = tostring(entry.key)
+            end
+            local entry_path = path .. "[" .. tostring(entry.key) .. "]"
+            table.insert(
+                encoded_entries,
+                "{" ..
+                    '"key_type":' .. json_escape(key_type) .. "," ..
+                    '"key":' .. encoded_key .. "," ..
+                    '"value":' .. encode_json_value(entry.value, stack, entry_path, depth + 1) ..
+                "}"
+            )
+        end
+        encoded = '{"__dcs_type":"table","entries":[' .. table.concat(encoded_entries, ",") .. "]}"
+    end
+
+    stack[value] = nil
+    return encoded
+end
+
+encode_json_value = function(value, stack, path, depth)
+    local value_type = type(value)
+    if value_type == "nil" then
+        return "null"
+    elseif value_type == "string" then
+        if not is_valid_utf8(value) then
+            error("invalid UTF-8 string at " .. path)
+        end
+        return json_escape(value)
+    elseif value_type == "number" then
+        return encode_number(value)
+    elseif value_type == "boolean" then
+        return tostring(value)
+    elseif value_type == "table" then
+        return encode_json_table(value, stack, path, depth)
+    end
+    error("unsupported result type " .. value_type .. " at " .. path)
+end
+
+local function encode_json(value)
+    local success, encoded_or_error = pcall(encode_json_value, value, {}, "$", 1)
+    if not success then
+        return nil, tostring(encoded_or_error)
+    end
+    return encoded_or_error
+end
+
+local function sanitize_message(message)
+    local sanitized = tostring(message or "Request failed")
+    sanitized = sanitized:gsub("[%z\1-\8\11\12\14-\31\127]", "?")
+    sanitized = sanitized:gsub("[\r\n]+", " ")
+    if not is_valid_utf8(sanitized) then
+        sanitized = sanitized:gsub("[\128-\255]", "?")
+    end
+    if #sanitized > 1024 then
+        sanitized = sanitized:sub(1, 1024) .. "..."
+    end
+    return sanitized
+end
+
+local function constant_time_equals(left, right)
+    if type(left) ~= "string" or type(right) ~= "string" then
+        return false
+    end
+
+    local maximum = math.max(#left, #right)
+    local difference = math.abs(#left - #right)
+    for index = 1, maximum do
+        difference = difference + math.abs((left:byte(index) or 0) - (right:byte(index) or 0))
+    end
+    return difference == 0
+end
+
+local STATUS_TEXT = {
+    [200] = "OK",
+    [400] = "Bad Request",
+    [401] = "Unauthorized",
+    [404] = "Not Found",
+    [405] = "Method Not Allowed",
+    [408] = "Request Timeout",
+    [411] = "Length Required",
+    [413] = "Payload Too Large",
+    [415] = "Unsupported Media Type",
+    [422] = "Unprocessable Entity",
+    [429] = "Too Many Requests",
+    [431] = "Request Header Fields Too Large",
+    [500] = "Internal Server Error",
+    [503] = "Service Unavailable",
+    [505] = "HTTP Version Not Supported",
+}
+
+local request_sequence = 0
+
+local function next_request_id()
+    request_sequence = (request_sequence % 999999999) + 1
+    return string.format("dcs-%09d", request_sequence)
+end
+
+local function valid_request_id(value)
+    return type(value) == "string" and #value >= 1 and #value <= 64 and value:match("^[%w._-]+$") ~= nil
+end
+
+local function error_body(request_id, kind, message)
+    return "{" ..
+        '"ok":false,' ..
+        '"request_id":' .. json_escape(request_id) .. "," ..
+        '"error":{' ..
+            '"kind":' .. json_escape(kind) .. "," ..
+            '"message":' .. json_escape(sanitize_message(message)) ..
+        "}}"
+end
+
+local function build_response(status, body, request_id)
+    local headers = {
+        "Content-Type: application/json; charset=utf-8",
+        "Content-Length: " .. tostring(#body),
+        "Connection: close",
+        "Cache-Control: no-store",
+        "X-Request-ID: " .. request_id,
+        "Server: " .. SERVER_NAME,
+    }
+    return "HTTP/1.1 " .. tostring(status) .. " " .. (STATUS_TEXT[status] or "Error") .. "\r\n" ..
+        table.concat(headers, "\r\n") .. "\r\n\r\n" .. body
+end
+
+local function parse_target(target)
+    if #target > config.max_request_line_bytes or target:sub(1, 1) ~= "/" or target:find("#", 1, true) then
+        return nil, "invalid request target"
+    end
+
+    local path, query = target:match("^([^?]*)%??(.*)$")
+    local parameters = {}
+    if query and query ~= "" then
+        for part in query:gmatch("[^&]+") do
+            local name, value = part:match("^([^=]+)=(.*)$")
+            if not name or parameters[name] ~= nil then
+                return nil, "malformed or duplicate query parameter"
+            end
+            if name ~= "env" then
+                return nil, "unsupported query parameter"
+            end
+            parameters[name] = value
+        end
+    end
+
+    return { path = path, parameters = parameters }
+end
+
+local SINGLETON_HEADERS = {
+    ["content-length"] = true,
+    ["content-type"] = true,
+    ["host"] = true,
+    ["transfer-encoding"] = true,
+    ["x-dcs-proxy-token"] = true,
+    ["x-request-id"] = true,
+}
+
+local function parse_request_head(header_block)
+    local lines = {}
+    for line in (header_block .. "\r\n"):gmatch("(.-)\r\n") do
+        table.insert(lines, line)
+    end
+
+    local request_line = table.remove(lines, 1)
+    if not request_line or #request_line > config.max_request_line_bytes then
+        return nil, 400, "bad_request", "request line is missing or too long", next_request_id()
+    end
+
+    local method, target, protocol = request_line:match("^(%S+) (%S+) (%S+)$")
+    if not method or not target or not protocol then
+        return nil, 400, "bad_request", "malformed request line", next_request_id()
+    end
+    if protocol ~= "HTTP/1.1" then
+        return nil, 505, "bad_request", "only HTTP/1.1 is supported", next_request_id()
+    end
+
+    local headers = {}
+    local counts = {}
+    for _, line in ipairs(lines) do
+        if line == "" or line:match("^[ \t]") then
+            return nil, 400, "bad_request", "malformed request header", next_request_id()
+        end
+        local name, value = line:match("^([^:]+):[ \t]*(.*)$")
+        if not name or not name:match("^[%w!#$%%&'*+%.%^_`|~-]+$") then
+            return nil, 400, "bad_request", "malformed request header", next_request_id()
+        end
+        if value:find("[%z\1-\8\11\12\14-\31\127]") then
+            return nil, 400, "bad_request", "invalid request header value", next_request_id()
+        end
+
+        name = name:lower()
+        value = value:gsub("^[ \t]+", ""):gsub("[ \t]+$", "")
+        counts[name] = (counts[name] or 0) + 1
+        if SINGLETON_HEADERS[name] and counts[name] > 1 then
+            return nil, 400, "bad_request", "duplicate security-sensitive header", next_request_id()
+        end
+        if headers[name] then
+            headers[name] = headers[name] .. "," .. value
+        else
+            headers[name] = value
+        end
+    end
+
+    local request_id = valid_request_id(headers["x-request-id"]) and headers["x-request-id"] or next_request_id()
+    local parsed_target, target_error = parse_target(target)
+    if not parsed_target then
+        return nil, 400, "bad_request", target_error, request_id
+    end
+    if headers["transfer-encoding"] then
+        return nil, 400, "bad_request", "transfer encoding is not supported", request_id
+    end
+    if not constant_time_equals(headers["x-dcs-proxy-token"], config.proxy_token) then
+        return nil, 401, "authentication_failed", "proxy authentication failed", request_id
+    end
+
+    local request = {
+        method = method,
+        path = parsed_target.path,
+        parameters = parsed_target.parameters,
+        headers = headers,
+        request_id = request_id,
+        expected_length = 0,
+    }
+
+    if request.path == "/v1/execute" then
+        if method ~= "POST" then
+            return nil, 405, "unsupported_method", "execution requires POST", request_id
+        end
+        if request.parameters.env ~= "default" then
+            return nil, 400, "unsupported_environment", "env must be default", request_id
+        end
+        if not headers["content-length"] then
+            return nil, 411, "bad_request", "Content-Length is required", request_id
+        end
+        if not headers["content-length"]:match("^%d+$") then
+            return nil, 400, "bad_request", "Content-Length must be a non-negative integer", request_id
+        end
+        request.expected_length = tonumber(headers["content-length"])
+        if request.expected_length > config.max_body_bytes then
+            return nil, 413, "payload_too_large", "Lua source exceeds the configured limit", request_id
+        end
+
+        local content_type = (headers["content-type"] or ""):lower():gsub("[ \t]", "")
+        if content_type ~= "text/plain" and content_type ~= "text/plain;charset=utf-8" then
+            return nil, 415, "bad_request", "Content-Type must be text/plain with UTF-8", request_id
+        end
+        request.action = "execute"
+    elseif request.path == "/healthz" then
+        if method ~= "GET" then
+            return nil, 405, "unsupported_method", "health requires GET", request_id
+        end
+        if headers["content-length"] and headers["content-length"] ~= "0" then
+            return nil, 400, "bad_request", "health requests cannot contain a body", request_id
+        end
+        request.action = "health"
+    else
+        return nil, 404, "bad_request", "route not found", request_id
+    end
+
+    return request
+end
+
+local function execute_lua(lua_source, request_id)
+    if not is_valid_utf8(lua_source) then
+        return nil, 400, "bad_request", "Lua source must be valid UTF-8"
+    end
+
+    local loaded, syntax_error = loadstring(lua_source, "dcs-fiddle-request")
+    if not loaded then
+        return nil, 422, "syntax_error", sanitize_message(syntax_error)
+    end
+
+    local executed, result = pcall(loaded)
+    if not executed then
+        return nil, 500, "runtime_error", sanitize_message(result)
+    end
+
+    local encoded_result, serialization_error = encode_json(result)
+    if not encoded_result then
+        return nil, 500, "serialization_error", sanitize_message(serialization_error)
+    end
+
+    local body = "{" ..
+        '"ok":true,' ..
+        '"request_id":' .. json_escape(request_id) .. "," ..
+        '"result":' .. encoded_result ..
+        "}"
+    if #body > config.max_response_bytes then
+        return nil, 500, "serialization_error", "encoded result exceeds the configured response limit"
+    end
+    return body, 200
+end
+
+local function health_body(request_id, environment_name)
+    return "{" ..
+        '"ok":true,' ..
+        '"request_id":' .. json_escape(request_id) .. "," ..
+        '"protocol_version":' .. tostring(PROTOCOL_VERSION) .. "," ..
+        '"environment":' .. json_escape(environment_name) .. "," ..
+        '"ready":true' ..
+        "}"
+end
+
+local function create_http_server(address, port, environment_name)
+    local tcp_server, bind_error = socket.bind(address, port)
+    if not tcp_server then
+        return nil, "could not bind " .. address .. ":" .. tostring(port) .. ": " .. tostring(bind_error)
+    end
+    tcp_server:settimeout(0)
+
+    local clients = {}
+    local client_sequence = 0
+
+    local function close_client(client)
+        if not client.closed then
+            client.closed = true
+            pcall(function()
+                client.socket:close()
+            end)
+            clients[client.id] = nil
+        end
+    end
+
+    local function queue_response(client, status, body, request_id)
+        local safe_request_id = valid_request_id(request_id) and request_id or next_request_id()
+        client.send_buffer = build_response(status, body, safe_request_id)
+        client.send_index = 1
+        client.state = "writing_response"
+        client.deadline = socket.gettime() + config.write_deadline
+    end
+
+    local function queue_error(client, status, kind, message, request_id)
+        local safe_request_id = valid_request_id(request_id) and request_id or next_request_id()
+        log_info("Request rejected id=" .. safe_request_id .. " kind=" .. kind .. " status=" .. status)
+        queue_response(client, status, error_body(safe_request_id, kind, message), safe_request_id)
+    end
+
+    local function process_received_bytes(client, bytes)
+        if bytes and #bytes > 0 then
+            client.receive_buffer = client.receive_buffer .. bytes
+        end
+
+        if client.state == "reading_headers" then
+            local delimiter_start = client.receive_buffer:find("\r\n\r\n", 1, true)
+            if not delimiter_start then
+                if #client.receive_buffer > config.max_header_bytes then
+                    queue_error(client, 431, "bad_request", "request headers exceed the configured limit")
+                end
+                return
+            end
+
+            local header_block = client.receive_buffer:sub(1, delimiter_start - 1)
+            if #header_block > config.max_header_bytes then
+                queue_error(client, 431, "bad_request", "request headers exceed the configured limit")
+                return
+            end
+
+            local body_prefix = client.receive_buffer:sub(delimiter_start + 4)
+            local request, status, kind, message, request_id = parse_request_head(header_block)
+            if not request then
+                queue_error(client, status, kind, message, request_id)
+                return
+            end
+
+            client.request = request
+            client.receive_buffer = body_prefix
+            if #body_prefix > request.expected_length then
+                queue_error(client, 400, "bad_request", "request contains unexpected trailing bytes", request.request_id)
+                return
+            end
+            if #body_prefix == request.expected_length then
+                client.state = "ready_to_execute"
+            else
+                client.state = "reading_body"
+            end
+        elseif client.state == "reading_body" then
+            if #client.receive_buffer > client.request.expected_length then
+                queue_error(
+                    client,
+                    400,
+                    "bad_request",
+                    "request contains unexpected trailing bytes",
+                    client.request.request_id
+                )
+            elseif #client.receive_buffer == client.request.expected_length then
+                client.state = "ready_to_execute"
+            end
+        end
+    end
+
+    local function receive_from_client(client)
+        local received, receive_error, partial = client.socket:receive(config.read_chunk_bytes)
+        local bytes = received or partial
+        process_received_bytes(client, bytes)
+
+        if client.state == "writing_response" or client.state == "ready_to_execute" then
+            return
+        end
+        if receive_error == "closed" then
+            queue_error(
+                client,
+                400,
+                "bad_request",
+                "connection closed before request completed",
+                client.request and client.request.request_id
+            )
+        elseif receive_error and receive_error ~= "timeout" then
+            close_client(client)
+        end
+    end
+
+    local function execute_ready_request(client, execution_used)
+        local request = client.request
+        if request.action == "health" then
+            queue_response(client, 200, health_body(request.request_id, environment_name), request.request_id)
+            return execution_used
+        end
+        if execution_used then
+            queue_error(client, 429, "server_busy", "another Lua request is executing", request.request_id)
+            return execution_used
+        end
+
+        log_info("Executing authorized request id=" .. request.request_id .. " environment=" .. environment_name)
+        local body, status, kind, message = execute_lua(client.receive_buffer, request.request_id)
+        if not body then
+            queue_error(client, status, kind, message, request.request_id)
+        else
+            queue_response(client, status, body, request.request_id)
+        end
+        return true
+    end
+
+    local function write_to_client(client)
+        local final_index = math.min(#client.send_buffer, client.send_index + config.write_chunk_bytes - 1)
+        local sent, send_error, partial_index = client.socket:send(
+            client.send_buffer,
+            client.send_index,
+            final_index
+        )
+        local last_index = sent or partial_index
+        if last_index then
+            client.send_index = last_index + 1
+        end
+        if client.send_index > #client.send_buffer then
+            close_client(client)
+        elseif send_error and send_error ~= "timeout" then
+            close_client(client)
+        end
+    end
+
+    local function reject_excess_client(client_socket)
+        client_socket:settimeout(0)
+        local request_id = next_request_id()
+        local body = error_body(request_id, "server_busy", "connection limit reached")
+        pcall(function()
+            client_socket:send(build_response(503, body, request_id))
+        end)
+        pcall(function()
+            client_socket:close()
+        end)
+    end
+
+    local function accept_clients()
+        for _ = 1, config.max_clients do
+            local client_socket, accept_error = tcp_server:accept()
+            if not client_socket then
+                if accept_error and accept_error ~= "timeout" then
+                    log_error("Accept failed: " .. tostring(accept_error))
+                end
+                break
+            end
+
+            local active_count = 0
+            for _ in pairs(clients) do
+                active_count = active_count + 1
+            end
+            if active_count >= config.max_clients then
+                reject_excess_client(client_socket)
+            else
+                client_socket:settimeout(0)
+                pcall(function()
+                    client_socket:setoption("tcp-nodelay", true)
+                end)
+                client_sequence = client_sequence + 1
+                local now = socket.gettime()
+                clients[client_sequence] = {
+                    id = client_sequence,
+                    socket = client_socket,
+                    state = "reading_headers",
+                    receive_buffer = "",
+                    deadline = now + config.incomplete_request_deadline,
+                    closed = false,
+                }
+                log_debug("Accepted client id=" .. client_sequence)
+            end
+        end
+    end
+
+    local function poll()
+        accept_clients()
+
+        local ordered_clients = {}
+        for _, client in pairs(clients) do
+            table.insert(ordered_clients, client)
+        end
+        table.sort(ordered_clients, function(left, right)
+            return left.id < right.id
+        end)
+
+        local execution_used = false
+        local now = socket.gettime()
+        for _, client in ipairs(ordered_clients) do
+            if not client.closed then
+                if now > client.deadline then
+                    if client.state == "writing_response" then
+                        close_client(client)
+                    else
+                        queue_error(
+                            client,
+                            408,
+                            "bad_request",
+                            "request deadline exceeded",
+                            client.request and client.request.request_id
+                        )
+                    end
+                end
+
+                if not client.closed and
+                    (client.state == "reading_headers" or client.state == "reading_body") then
+                    receive_from_client(client)
+                end
+                if not client.closed and client.state == "ready_to_execute" then
+                    execution_used = execute_ready_request(client, execution_used)
+                end
+                if not client.closed and client.state == "writing_response" then
+                    write_to_client(client)
                 end
             end
         end
     end
 
-    if (server_config.cors) then
-        response.headers["Access-Control-Allow-Origin"] = server_config.cors
-    end
-
-    send_http(client, response)
-
-    __info("Connection Completed")
-    client:close()
-end
-
-
-local function create_server(address, port)
-    tcp_server = socket.bind(address, port)
-    if not tcp_server then
-        __error("Could not bind socket.")
-        return
-    end
-    tcp_server:settimeout(0) -- Make non blocking
-
-    local ip, port = tcp_server:getsockname()
-
-    __info("HTTP Server running on " .. ip .. ":" .. port)
-
-    --- Returns function which when called will perform 1 server loop
-    --- Note this impl only allows 1 request to be handled at a time
-    return function()
-        local client = tcp_server:accept()
-        if (client) then
-            handle_client_connection(client) -- This function has no return value
-            -- local success, res = handle_client_connection(client)
-            -- if (not success) then
-            --     __error("Failed to run client handler " .. res)
-            -- else
-            --     clients[ip].receive_patten = res
-            -- end
+    local function close_clients()
+        local snapshot = {}
+        for _, client in pairs(clients) do
+            table.insert(snapshot, client)
+        end
+        for _, client in ipairs(snapshot) do
+            close_client(client)
         end
     end
+
+    local bound_ip, bound_port = tcp_server:getsockname()
+    log_info("Secure HTTP server ready on " .. tostring(bound_ip) .. ":" .. tostring(bound_port))
+
+    return {
+        poll = poll,
+        close_clients = close_clients,
+    }
 end
 
-------------------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------------------
---------------------------------------------------- MAIN ---------------------------------------------------------------
+local is_mission = not DCS
+local environment_name = is_mission and "mission" or "hooks"
+local port = is_mission and config.mission_port or config.gui_port
+local server, server_error = create_http_server(config.bind_ip, port, environment_name)
+if not server then
+    log_error("Startup failed: " .. tostring(server_error))
+    return
+end
 
-__info("Checking the DCS environment...")
-
-local isMission = not DCS
-local port =  FIDDLE.PORT or 12080
-local bind_ip = FIDDLE.BIND_IP or '127.0.0.1'
-
-if (isMission) then
-    __info("Starting fiddle server in the mission scripting environment...")
-    local loop = create_server(bind_ip, port)
-
-    if (not loop) then
-        __error("Failed to start server in the mission scripting environment")
-        return
-    end
-
-    timer.scheduleFunction(function(arg, time)
-        local success, err = pcall(loop)
+if is_mission then
+    local function scheduled_poll(_, model_time)
+        local success, poll_error = pcall(server.poll)
         if not success then
-            __info("loop() error: " .. tostring(err))
+            log_error("Mission server poll failed: " .. tostring(poll_error))
         end
-        return timer.getTime() + .1
-    end, nil, timer.getTime() + .1)
+        return model_time + config.poll_interval
+    end
 
-    __info("DCS Fiddle server running")
-    env.info("DCS Fiddle successfully initialized.\n\nHappy Hacking!!", false)
-elseif (not isMission) then
-    __info("Starting fiddle server in the Hooks environment...")
-
-    local fiddleFile = lfs.writedir() .. 'Scripts\\Hooks\\dcs-fiddle-server.lua'
-
-    local loop = create_server(bind_ip, port+1)
-
-    if (not loop) then
-        __error("Failed to start server in the Hooks environment")
+    timer.scheduleFunction(scheduled_poll, nil, timer.getTime() + config.poll_interval)
+    log_info("Mission environment server initialized")
+    if env and env.info then
+        env.info("DCS Lua Runner secure server initialized", false)
+    end
+else
+    hooks_directory = hooks_directory or resolve_hooks_directory()
+    if not hooks_directory then
+        log_error("Hooks directory could not be resolved for Mission bootstrap")
         return
     end
 
+    local server_path = (hooks_directory .. SERVER_FILENAME):gsub("\\", "/")
+    local config_path = (hooks_directory .. CONFIG_FILENAME):gsub("\\", "/")
+    local next_poll_at = 0
     local callbacks = {}
 
     function callbacks.onSimulationStart()
-        __info("Bootstrapping DCS Fiddle inside the mission using file " .. fiddleFile)
-        net.dostring_in("mission", string.format([[a_do_script("dofile('%s')")]], fiddleFile:gsub("\\","/")))
+        local server_command = string.format("dofile(%q)", server_path)
+        local bootstrap = string.format([[
+local config_chunk, config_error = loadfile(%q)
+if not config_chunk then error(config_error) end
+local mission_config = config_chunk()
+if type(mission_config) ~= "table" then error("DCS Lua Runner configuration must return a table") end
+DCS_FIDDLE_CONFIG = mission_config
+a_do_script(%q)
+]], config_path, server_command)
+
+        local result, is_error = net.dostring_in("mission", bootstrap)
+        if is_error then
+            log_error("Mission bootstrap failed: " .. sanitize_message(result))
+        else
+            log_info("Mission bootstrap requested")
+        end
     end
 
     function callbacks.onSimulationFrame()
-        loop()
+        local now = socket.gettime()
+        if now >= next_poll_at then
+            next_poll_at = now + config.poll_interval
+            local success, poll_error = pcall(server.poll)
+            if not success then
+                log_error("Hooks server poll failed: " .. tostring(poll_error))
+            end
+        end
+    end
+
+    function callbacks.onSimulationStop()
+        server.close_clients()
     end
 
     DCS.setUserCallbacks(callbacks)
-
-    __info("DCS Fiddle server running")
-else
-    __info("Failed to start DCS fiddle, unknown environment")
+    log_info("Hooks environment server initialized")
 end

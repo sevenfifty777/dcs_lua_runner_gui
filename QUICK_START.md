@@ -1,118 +1,81 @@
-=== DCS Lua Runner GUI v1.0 - Quick Start Guide ===
+# DCS Lua Runner GUI Quick Start
 
-🚀 GETTING STARTED
-==================
+This application executes arbitrary Lua inside DCS. Use it only with trusted
+code and keep the DCS backend listeners private.
 
-1. Double-click "DCS_Lua_Runner_GUI.exe" to start the application
-2. The application will open with a dark theme interface
-3. Sample Lua code is already loaded in the editor
+## 1. Install the DCS files
 
-⚙️ BASIC SETUP
-===============
+Copy these files to `%USERPROFILE%\Saved Games\<DCS version>\Scripts\Hooks\`:
 
-FOR LOCAL DCS (Default):
-- Leave "Run Code Locally" checked in Settings tab
-- Make sure DCS is running with dcs-fiddle-server.lua installed
+- `dcs-fiddle-server.lua`
+- `dcs-fiddle-config.lua.example`, renamed to `dcs-fiddle-config.lua`
 
-FOR REMOTE DCS:
-- Uncheck "Run Code Locally" in Settings tab
-- Enter server address, port, username, and password
-- Configure authentication in the remote DCS server
-- **IMPORTANT**: Click "Save Settings" after entering all connection details
+Edit the new configuration:
 
-🎯 USAGE
-=========
+- keep `bind_ip = "127.0.0.1"`;
+- keep Mission port 12080 and Hooks port 12081;
+- replace the proxy-token placeholder with at least 256 bits of random data;
+- do not commit or share the populated file.
 
-RUNNING CODE:
-- Press F5 to run all code in the editor
-- Press F8 to run only selected code
-- Click the ▶ Run button in the toolbar
-- Use Run menu options
+The same proxy token must be available to the Caddy Windows service as
+`DCS_FIDDLE_PROXY_TOKEN`.
 
-EDITING:
-- Type Lua code directly in the left panel
-- Syntax highlighting automatically applies
-- Line numbers are shown on the left
-- Standard shortcuts work (Ctrl+C, Ctrl+V, etc.)
+## 2. Configure Caddy
 
-FILE OPERATIONS:
-- Ctrl+O to open .lua files
-- Ctrl+S to save current code
-- File menu for New, Open, Save As
+Start from `deploy/Caddyfile.example` and follow
+`docs/CADDY_MTLS_SETUP.md`. The template preserves the two dashboard routes and
+adds mTLS only to:
 
-RESULTS:
-- View results in the Results tab (right panel)
-- Results show timestamp and success/error status
-- Syntax highlighting for both Lua and JSON formats
-- Toggle format with the Lua/JSON button
+- `https://mission.example.com` -> `127.0.0.1:12080`;
+- `https://dcs-lua-gui.example.com` -> `127.0.0.1:12081`.
 
-📋 REQUIRED DCS SETUP
-======================
+Before reload:
 
-YOU MUST INSTALL THE DCS FIDDLE SERVER SCRIPT:
+1. Install the client-CA certificate at the path referenced by the Caddyfile.
+2. Confirm the Caddy service can read that certificate and its proxy-token
+   environment variable.
+3. Run `caddy validate --config C:\path\to\Caddyfile`.
+4. Back up the active Caddyfile.
+5. Run `caddy reload --config C:\path\to\Caddyfile`.
 
-1. Copy "dcs-fiddle-server.lua" to:
-   %USERPROFILE%\Saved Games\DCS.openbeta\Scripts\Hooks\
-   (or your DCS version folder like DCS, DCS.release_server, etc.)
+Only TCP 80 and 443 should be publicly reachable. Keep TCP 3001, 8090, 12080,
+and 12081 blocked externally.
 
-2. Edit DCS Mission Scripting file:
-   [DCS Install]\Scripts\MissionScripting.lua
-   Comment out these lines:
-   --  _G['require'] = nil
-   --  _G['package'] = nil
+## 3. Configure the GUI
 
-3. Restart DCS World
+Open the Settings tab and provide:
 
-🔧 QUICK SETTINGS
-==================
+- Mission URL: `https://mission.example.com`;
+- Hooks/GUI URL: `https://dcs-lua-gui.example.com`;
+- client certificate PEM file;
+- matching unencrypted client private-key PEM file;
+- optional CA bundle when the public server certificate is not trusted by the
+  Windows/Python trust store.
 
-TOOLBAR BUTTONS:
-- 📁 Load File: Load Lua file with options (replace, append, or insert at cursor)
-- ▶ Run: Execute all code
-- ▶ Selected: Execute selected code only
-- Local/Remote: Toggle between local DCS and remote server
-- Mission/GUI: Toggle between Mission and GUI environments
-- Lua/JSON: Toggle result display format
+Protect the private key with Windows filesystem ACLs. The GUI never stores the
+Caddy-to-DCS proxy token.
 
-KEYBOARD SHORTCUTS:
-- F5: Run all code
-- F8: Run selected code
-- Ctrl+S: Save file
-- Ctrl+O: Open file
-- Ctrl+N: New file
+## 4. Start DCS and test
 
-❗ TROUBLESHOOTING
-==================
+Restart DCS after installing or changing the Hook script. Then:
 
-CONNECTION ERRORS:
-- Check DCS is running
-- Verify dcs-fiddle-server.lua is installed
-- For remote: check server address, port, and credentials
-- Check Windows Firewall settings
+1. Select Mission and execute `return timer.getTime()`.
+2. Select GUI and execute a GameGUI-safe expression.
+3. Confirm results contain no TLS or authentication errors.
+4. Check DCS and Caddy logs without recording submitted Lua or credentials.
 
-ANTIVIRUS WARNINGS:
-- Add DCS_Lua_Runner_GUI.exe to antivirus exceptions
-- The executable is safe (built with PyInstaller)
+Use F5 to run all editor content and F8 to run the selected text.
 
-PERMISSION ERRORS:
-- Run as administrator if needed
-- Check file permissions in DCS directories
+## Troubleshooting
 
-EXAMPLE CODE:
-- The editor starts with sample code you can run immediately
-- Try: return env.mission.theatre
-- Or: return timer.getTime()
+- TLS validation failure: check the hostname, server certificate, and optional
+  CA bundle.
+- Client certificate rejected: confirm it chains to the client CA configured in
+  the relevant Caddy site block and is not expired or revoked.
+- HTTP 401 from the Lua backend: confirm Caddy and DCS loaded the same proxy
+  token; never place that token in the GUI.
+- Connection failure: confirm Caddy is listening on 443 and the relevant DCS
+  loopback listener started successfully.
+- HTTP 413: the Lua source exceeds the configured 256 KiB request limit.
 
-📚 MORE INFO
-=============
-
-- Full documentation: README.md
-- Installation details: INSTALLATION.md
-- Based on DCS Fiddle project (MIT License)
-- No Python installation required for the executable
-
-🎉 ENJOY!
-=========
-
-You now have a standalone DCS Lua development environment!
-Perfect for mission scripting, debugging, and testing Lua code in DCS World.
+See `README.md`, `docs/PLAN.md`, and `docs/IMPLEMENTATION.md` for full details.

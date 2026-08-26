@@ -1,2 +1,2 @@
-requests>=2.31.0
-pygments>=2.15.0
+requests==2.34.2
+Pygments==2.21.0
