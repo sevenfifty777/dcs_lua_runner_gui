@@ -11,12 +11,16 @@ DCS dashboard or LSO dashboard application code.
 
 ## Confirmed Deployment Baseline
 
-| Public hostname | Private backend |
+| Public hostname placeholder | Private backend |
 | --- | --- |
-| `redacted-dashboard1.example.com` | `127.0.0.1:3001` |
-| `lso-board.example.com` | `127.0.0.1:8090` |
-| `mission.example.com` | `127.0.0.1:12080` |
-| `dcs-lua-gui.example.com` | `127.0.0.1:12081` |
+| `dashboard.example.com` | `127.0.0.1:3001` |
+| `lso.example.com` | `127.0.0.1:8090` |
+| `fiddle.example.com` | `127.0.0.1:12080` |
+| `fiddle-gui.example.com` | `127.0.0.1:12081` |
+
+All `example.com` names in this repository are reserved documentation
+placeholders. Supply the real deployment hostnames through private
+configuration.
 
 The server firewall permits inbound TCP 80 and 443. Direct external access to
 TCP 3001, 8090, 12080, and 12081 is already blocked and must remain blocked.

@@ -48,16 +48,17 @@ The following decisions are part of this plan:
     copied into a release directory.
 12. Caddy, both dashboards, and both DCS Lua listeners run on the same Windows
     server and use hostname-based routing.
-13. The confirmed public-to-private mappings are:
-    - `redacted-dashboard1.example.com` to `127.0.0.1:3001`;
-    - `lso-board.example.com` to `127.0.0.1:8090`;
-    - `mission.example.com` to `127.0.0.1:12080`;
-    - `dcs-lua-gui.example.com` to `127.0.0.1:12081`.
+13. The public-to-private mappings use redacted, reserved hostname
+    placeholders. Replace them with the real deployment values:
+    - `dashboard.example.com` to `127.0.0.1:3001`;
+    - `lso.example.com` to `127.0.0.1:8090`;
+    - `fiddle.example.com` to `127.0.0.1:12080`;
+    - `fiddle-gui.example.com` to `127.0.0.1:12081`.
 14. The server firewall already permits inbound TCP 80 and 443 only. Direct
     external access to TCP 3001, 8090, 12080, and 12081 is blocked and must
     remain blocked throughout deployment and rollback.
 15. Lua Runner mTLS, request filtering, and proxy-token headers will be scoped
-    exclusively to `mission.example.com` and `dcs-lua-gui.example.com`. They
+    exclusively to `fiddle.example.com` and `fiddle-gui.example.com`. They
     must not be applied to either dashboard hostname.
 
 If Caddy and DCS are not on the same host, decision 8 changes to a private
@@ -171,10 +172,10 @@ Record:
 - active Caddy version;
 - active Caddy executable path and SHA-256 hash;
 - active Caddyfile path;
-- public Mission hostname, confirmed as `mission.example.com`;
-- public GUI hostname, confirmed as `dcs-lua-gui.example.com`;
-- dashboard hostname, confirmed as `redacted-dashboard1.example.com`;
-- LSO dashboard hostname, confirmed as `lso-board.example.com`;
+- public Mission hostname (repository placeholder: `fiddle.example.com`);
+- public GUI hostname (repository placeholder: `fiddle-gui.example.com`);
+- dashboard hostname (repository placeholder: `dashboard.example.com`);
+- LSO dashboard hostname (repository placeholder: `lso.example.com`);
 - current certificate issuer and expiration;
 - current Caddy-to-DCS upstream routes;
 - whether Caddy and DCS run on the same host;
@@ -552,10 +553,10 @@ the deployment source:
 
 | Public hostname | Backend | Purpose | Planned Caddy authentication |
 | --- | --- | --- | --- |
-| `redacted-dashboard1.example.com` | `127.0.0.1:3001` | Main DCS web dashboard | Preserve existing application authentication |
-| `lso-board.example.com` | `127.0.0.1:8090` | LSO greenie-board dashboard | Preserve current behavior; audit separately if required |
-| `mission.example.com` | `127.0.0.1:12080` | Mission Lua execution | Require and verify an mTLS client certificate |
-| `dcs-lua-gui.example.com` | `127.0.0.1:12081` | Hooks/GameGUI Lua execution | Require and verify an mTLS client certificate |
+| `dashboard.example.com` | `127.0.0.1:3001` | Main DCS web dashboard | Preserve existing application authentication |
+| `lso.example.com` | `127.0.0.1:8090` | LSO greenie-board dashboard | Preserve current behavior; audit separately if required |
+| `fiddle.example.com` | `127.0.0.1:12080` | Mission Lua execution | Require and verify an mTLS client certificate |
+| `fiddle-gui.example.com` | `127.0.0.1:12081` | Hooks/GameGUI Lua execution | Require and verify an mTLS client certificate |
 
 The two dashboard blocks must not import the Lua Runner TLS client-authentication
 policy, Lua API route restrictions, `Authorization` removal, or internal proxy
@@ -566,15 +567,15 @@ The implementation will replace ambiguous `localhost` upstreams with explicit
 IPv4 loopback addresses. The planned Caddyfile shape is:
 
 ```caddyfile
-redacted-dashboard1.example.com {
+dashboard.example.com {
 	reverse_proxy 127.0.0.1:3001
 }
 
-lso-board.example.com {
+lso.example.com {
 	reverse_proxy 127.0.0.1:8090
 }
 
-mission.example.com {
+fiddle.example.com {
 	tls {
 		client_auth {
 			mode require_and_verify
@@ -614,7 +615,7 @@ mission.example.com {
 	}
 }
 
-dcs-lua-gui.example.com {
+fiddle-gui.example.com {
 	tls {
 		client_auth {
 			mode require_and_verify
@@ -1036,11 +1037,11 @@ DCS.
 ### 17.3 Caddy tests
 
 - Active Caddyfile validates.
-- `redacted-dashboard1.example.com` still reaches `127.0.0.1:3001` without a
+- `dashboard.example.com` still reaches `127.0.0.1:3001` without a
   Lua Runner client certificate.
 - Main dashboard health, password login, Discord OAuth initiation/callback,
   Bearer/cookie-authenticated requests, and SSE streams still behave as before.
-- `lso-board.example.com` still reaches `127.0.0.1:8090`, and `/` plus
+- `lso.example.com` still reaches `127.0.0.1:8090`, and `/` plus
   `/api/passes` retain their previous behavior.
 - Neither dashboard upstream receives `X-DCS-Proxy-Token` or Lua Runner header
   rewriting.
@@ -1059,7 +1060,7 @@ DCS.
 - Only TCP 80 and 443 are reachable externally.
 - TCP 3001, 8090, 12080, and 12081 are unreachable externally before, during,
   and after deployment.
-- `mission.example.com` and `dcs-lua-gui.example.com` require a trusted client
+- `fiddle.example.com` and `fiddle-gui.example.com` require a trusted client
   certificate, while neither dashboard hostname unexpectedly requires one.
 - A forged Host header grants no bypass.
 - A forged `X-Forwarded-Host` grants no bypass.
@@ -1294,14 +1295,14 @@ The following work is explicitly out of scope for this implementation:
 
 ## 24. Open Deployment Questions
 
-The following deployment facts are now confirmed:
+The deployment topology is documented with redacted hostnames:
 
 - Caddy and all four upstream services run on the same Windows host.
 - Caddy uses a separate hostname for every service.
-- The Mission and Hooks/GameGUI public hostnames are `mission.example.com` and
-  `dcs-lua-gui.example.com`.
-- The two dashboard hostnames are `redacted-dashboard1.example.com` and
-  `lso-board.example.com`.
+- The Mission and Hooks/GameGUI repository placeholders are
+  `fiddle.example.com` and `fiddle-gui.example.com`.
+- The two dashboard repository placeholders are `dashboard.example.com` and
+  `lso.example.com`.
 - Only TCP 80/443 are publicly allowed; TCP 3001, 8090, 12080, and 12081 are
   externally blocked.
 

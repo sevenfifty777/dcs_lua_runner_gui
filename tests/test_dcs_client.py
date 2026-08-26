@@ -76,8 +76,8 @@ class DCSClientTests(unittest.TestCase):
 
     def settings(self) -> dict[str, Any]:
         return {
-            "mission_url": "https://mission.example.com",
-            "gui_url": "https://dcs-lua-gui.example.com",
+            "mission_url": "https://fiddle.example.com",
+            "gui_url": "https://fiddle-gui.example.com",
             "client_cert_file": str(self.certificate),
             "client_key_file": str(self.private_key),
             "ca_bundle": "",
@@ -99,7 +99,7 @@ class DCSClientTests(unittest.TestCase):
         self.assertEqual(result, 42)
         method, url, kwargs = session.calls[0]
         self.assertEqual(method, "POST")
-        self.assertEqual(url, "https://mission.example.com/v1/execute?env=default")
+        self.assertEqual(url, "https://fiddle.example.com/v1/execute?env=default")
         self.assertEqual(kwargs["data"], "return 'héllo'".encode("utf-8"))
         self.assertEqual(kwargs["cert"], (str(self.certificate), str(self.private_key)))
         self.assertIs(kwargs["verify"], True)
@@ -193,7 +193,7 @@ class DCSClientTests(unittest.TestCase):
 
         self.assertTrue(success)
         self.assertEqual(result["environment"], "hooks")
-        self.assertEqual(session.calls[0][1], "https://dcs-lua-gui.example.com/healthz")
+        self.assertEqual(session.calls[0][1], "https://fiddle-gui.example.com/healthz")
 
 
 if __name__ == "__main__":

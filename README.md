@@ -148,11 +148,12 @@ _G['package'] = nil     -- Restore this line to disable package loading
 
 ### Remote Access Configuration
 
-The Lua ports must never be published. The production topology is:
+The Lua ports must never be published. The topology below uses reserved
+`example.com` placeholders; replace them with your own DNS names:
 
 ```text
-mission.example.com     -> Caddy HTTPS + mTLS -> 127.0.0.1:12080
-dcs-lua-gui.example.com -> Caddy HTTPS + mTLS -> 127.0.0.1:12081
+fiddle.example.com     -> Caddy HTTPS + mTLS -> 127.0.0.1:12080
+fiddle-gui.example.com -> Caddy HTTPS + mTLS -> 127.0.0.1:12081
 ```
 
 Only TCP 80 and 443 are publicly allowed. TCP 3001, 8090, 12080, and 12081 are

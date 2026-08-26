@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
-  "mission_url": "https://mission.example.com",
-  "gui_url": "https://dcs-lua-gui.example.com",
+  "mission_url": "https://fiddle.example.com",
+  "gui_url": "https://fiddle-gui.example.com",
   "client_cert_file": "C:\\path\\to\\fiddle-client.crt",
   "client_key_file": "C:\\path\\to\\fiddle-client.key",
   "ca_bundle": "",

@@ -24,10 +24,11 @@ The same proxy token must be available to the Caddy Windows service as
 
 Start from `deploy/Caddyfile.example` and follow
 `docs/CADDY_MTLS_SETUP.md`. The template preserves the two dashboard routes and
-adds mTLS only to:
+adds mTLS only to the following reserved example hostnames. Replace them with
+your own DNS names before deployment:
 
-- `https://mission.example.com` -> `127.0.0.1:12080`;
-- `https://dcs-lua-gui.example.com` -> `127.0.0.1:12081`.
+- `https://fiddle.example.com` -> `127.0.0.1:12080`;
+- `https://fiddle-gui.example.com` -> `127.0.0.1:12081`.
 
 Before reload:
 
@@ -45,8 +46,8 @@ and 12081 blocked externally.
 
 Open the Settings tab and provide:
 
-- Mission URL: `https://mission.example.com`;
-- Hooks/GUI URL: `https://dcs-lua-gui.example.com`;
+- Mission URL, replacing the placeholder `https://fiddle.example.com`;
+- Hooks/GUI URL, replacing the placeholder `https://fiddle-gui.example.com`;
 - client certificate PEM file;
 - matching unencrypted client private-key PEM file;
 - optional CA bundle when the public server certificate is not trusted by the

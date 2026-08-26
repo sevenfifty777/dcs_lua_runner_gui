@@ -34,8 +34,8 @@ class SettingsManagerTests(unittest.TestCase):
         self.legacy_file.write_text(
             json.dumps(
                 {
-                    "server_address": "mission.example.com",
-                    "server_address_gui": "dcs-lua-gui.example.com",
+                    "server_address": "fiddle.example.com",
+                    "server_address_gui": "fiddle-gui.example.com",
                     "server_port": 443,
                     "server_port_gui": 443,
                     "use_https": True,
@@ -49,8 +49,8 @@ class SettingsManagerTests(unittest.TestCase):
 
         settings = self.manager.load_settings()
 
-        self.assertEqual(settings["mission_url"], "https://mission.example.com")
-        self.assertEqual(settings["gui_url"], "https://dcs-lua-gui.example.com")
+        self.assertEqual(settings["mission_url"], "https://fiddle.example.com")
+        self.assertEqual(settings["gui_url"], "https://fiddle-gui.example.com")
         self.assertFalse(settings["run_in_mission_env"])
         saved = self.settings_file.read_text(encoding="utf-8")
         sanitized_legacy = self.legacy_file.read_text(encoding="utf-8")
@@ -61,7 +61,7 @@ class SettingsManagerTests(unittest.TestCase):
 
     def test_invalid_non_https_endpoint_is_rejected(self) -> None:
         settings = self.manager.default_settings.copy()
-        settings["mission_url"] = "http://mission.example.com"
+        settings["mission_url"] = "http://fiddle.example.com"
 
         with self.assertRaises(SettingsError):
             self.manager.validate_settings(settings)

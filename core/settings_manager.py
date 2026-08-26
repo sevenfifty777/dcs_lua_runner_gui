@@ -40,8 +40,8 @@ class SettingsManager:
         self.last_error: str | None = None
         self.default_settings: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
-            "mission_url": "https://mission.example.com",
-            "gui_url": "https://dcs-lua-gui.example.com",
+            "mission_url": "https://fiddle.example.com",
+            "gui_url": "https://fiddle-gui.example.com",
             "client_cert_file": "",
             "client_key_file": "",
             "ca_bundle": "",
