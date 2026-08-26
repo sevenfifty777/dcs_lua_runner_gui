@@ -46,6 +46,9 @@ Implemented:
 - Replaced Basic Authentication, Host-header bypass, base64 GET execution, and
   source-embedded credentials in `dcs-fiddle-server.lua`.
 - Added fail-closed `dcs-fiddle-config.lua` loading with a non-secret example.
+- Kept only `dcs-fiddle-server.lua` in the DCS dedicated server's auto-loaded
+  `Scripts\Hooks` directory. The data-only config now loads explicitly from
+  `Scripts\DCSLuaRunner`, preventing DCS from evaluating it as a separate Hook.
 - Enforced `127.0.0.1` binding and a separate 256-bit internal proxy token.
 - Added `POST /v1/execute?env=default` and authenticated `GET /healthz`.
 - Added request-line, header, body, response, client-count, nesting, and deadline
@@ -95,6 +98,9 @@ Implemented:
 
 ## Security Notes
 
+- `dcs-fiddle-server.lua` and `dcs-fiddle-config.lua` are DCS dedicated-server
+  components. Install them in the Saved Games profile of the Windows account
+  running the DCS server, not in a player's DCS client profile.
 - Never commit `dcs-fiddle-config.lua`, a client private key, the client-CA
   private key, or `DCS_FIDDLE_PROXY_TOKEN`.
 - The Caddy server needs the client-CA certificate, not its private key.
@@ -110,7 +116,9 @@ Implemented:
 Completed in this environment:
 
 - Python 3.11.9 byte-compilation succeeded.
-- `python -m unittest discover -s tests -v`: 22 tests passed.
+- `python -m unittest discover -s tests -v`: 23 tests passed, including a
+  regression contract that requires the config to remain outside
+  `Scripts\Hooks`.
 - An isolated virtual environment resolved `requirements.lock`; `pip check`
   reported no conflicts and `pip-audit 2.10.1` reported no known
   vulnerabilities in the locked application/build packages.
@@ -118,7 +126,9 @@ Completed in this environment:
 - The PowerShell distribution script parsed successfully.
 - PyInstaller 6.22.2 built and smoke-tested
   `DCS_Lua_Runner_GUI_v2.0-dev`; root and packaged Lua SHA-256 matched at
-  `E0E073B06305B853808B927F181EF67296599C86DDA03AE3CA2BBE5779591A76`.
+  `964F32A5B0AAB54A9B4CAFA2AE6AF10EE515D9A603A75919287E9BE5E74CAB2F`.
+  The rebuilt executable SHA-256 is
+  `FD859701AC25E8079FB5E235C043ADEA3AED6AB34B207D0BDB2958FDD8954D15`.
 
 Pending:
 

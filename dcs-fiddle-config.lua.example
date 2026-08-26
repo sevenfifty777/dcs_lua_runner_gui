@@ -1,5 +1,9 @@
--- Copy this file to dcs-fiddle-config.lua beside dcs-fiddle-server.lua in:
--- %USERPROFILE%\Saved Games\<DCS version>\Scripts\Hooks\
+-- DCS DEDICATED SERVER-SIDE CONFIGURATION (not a DCS client installation).
+-- Copy this file to:
+-- %USERPROFILE%\Saved Games\<DCS server version>\Scripts\DCSLuaRunner\dcs-fiddle-config.lua
+--
+-- Keep this data-only file outside Scripts\Hooks. The server hook loads it
+-- explicitly; DCS must not auto-load it as a separate Hook script.
 --
 -- Generate proxy_token with a cryptographically secure tool. The exact same
 -- value must be supplied to Caddy through its Windows service environment as

@@ -3,12 +3,28 @@
 This application executes arbitrary Lua inside DCS. Use it only with trusted
 code and keep the DCS backend listeners private.
 
-## 1. Install the DCS files
+## 1. Install the DCS dedicated-server files
 
-Copy these files to `%USERPROFILE%\Saved Games\<DCS version>\Scripts\Hooks\`:
+Perform this step on the **DCS dedicated server**, using the Saved Games profile
+of the Windows account that runs the DCS server. Do not install these Lua files
+in a player's DCS client Saved Games profile.
 
-- `dcs-fiddle-server.lua`
-- `dcs-fiddle-config.lua.example`, renamed to `dcs-fiddle-config.lua`
+Copy the executable Hook script to:
+
+```text
+%USERPROFILE%\Saved Games\<DCS server version>\Scripts\Hooks\dcs-fiddle-server.lua
+```
+
+Create the separate configuration directory, then copy and rename the example
+to:
+
+```text
+%USERPROFILE%\Saved Games\<DCS server version>\Scripts\DCSLuaRunner\dcs-fiddle-config.lua
+```
+
+The config intentionally stays outside `Scripts\Hooks`: DCS auto-loads the
+server Hook, and that Hook explicitly loads the data-only config. Do not put
+the renamed `.lua` config in `Scripts\Hooks`.
 
 Edit the new configuration:
 

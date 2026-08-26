@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER_SOURCE = ROOT / "dcs-fiddle-server.lua"
+CONFIG_EXAMPLE = ROOT / "dcs-fiddle-config.lua.example"
 
 
 class LuaServerContractTests(unittest.TestCase):
@@ -42,6 +43,21 @@ class LuaServerContractTests(unittest.TestCase):
     def test_server_does_not_log_submitted_lua(self) -> None:
         self.assertNotIn("Processing Command", self.source)
         self.assertNotIn('log_info(lua_source)', self.source)
+
+    def test_server_loads_data_config_outside_auto_loaded_hooks(self) -> None:
+        config_source = CONFIG_EXAMPLE.read_text(encoding="utf-8")
+
+        self.assertIn(
+            'CONFIG_RELATIVE_PATH = "Scripts\\\\DCSLuaRunner\\\\dcs-fiddle-config.lua"',
+            self.source,
+        )
+        self.assertIn(
+            'HOOKS_RELATIVE_DIRECTORY = "Scripts\\\\Hooks\\\\"',
+            self.source,
+        )
+        self.assertNotIn('CONFIG_FILENAME = "dcs-fiddle-config.lua"', self.source)
+        self.assertIn("Keep this data-only file outside Scripts\\Hooks", config_source)
+        self.assertIn("DCS DEDICATED SERVER-SIDE CONFIGURATION", config_source)
 
 
 if __name__ == "__main__":

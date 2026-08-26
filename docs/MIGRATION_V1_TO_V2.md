@@ -4,6 +4,10 @@ This is a coordinated cutover. The secure Lua server intentionally does not
 retain the legacy GET/Basic endpoint, because leaving it enabled would preserve
 the original remote-code-execution weakness.
 
+All DCS Lua installation paths below are on the **DCS dedicated server**, under
+the Saved Games profile of its service/runtime Windows account—not on a DCS
+player client.
+
 ## Before the Window
 
 1. Back up the active Caddyfile, old Hook Lua file, and non-secret application
@@ -17,8 +21,11 @@ the original remote-code-execution weakness.
 
 ## Cutover
 
-1. Install `dcs-fiddle-server.lua` and the populated, untracked
-   `dcs-fiddle-config.lua` in Saved Games Hooks.
+1. Install `dcs-fiddle-server.lua` in
+   `Saved Games\<DCS server version>\Scripts\Hooks`. Install the populated,
+   untracked `dcs-fiddle-config.lua` separately in
+   `Saved Games\<DCS server version>\Scripts\DCSLuaRunner`; do not put the
+   config in Hooks.
 2. Restart DCS and confirm ports 12080 and 12081 listen only on loopback.
 3. Merge the two Fiddle blocks from `deploy/Caddyfile.example` into the active
    Caddyfile. If optional dashboard blocks already exist, leave them unchanged;

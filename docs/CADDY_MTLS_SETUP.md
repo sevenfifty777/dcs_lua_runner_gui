@@ -5,6 +5,11 @@ authentication behavior of the existing DCS and LSO dashboards. Complete it in
 a maintenance window: an invalid global Caddy configuration can affect every
 site even when only the Fiddle blocks were edited.
 
+The Lua Hook and its config in this guide are installed **only on the DCS
+dedicated server**, in the Saved Games profile of the Windows account running
+that server. They are not installed on a player's DCS client. The Python GUI
+and its client certificate are installed on an authorized operator workstation.
+
 ## Security Model
 
 ```text
@@ -85,7 +90,7 @@ $proxyToken = [Convert]::ToBase64String($tokenBytes).TrimEnd('=').Replace('+', '
 Put the value in both locations, without committing it:
 
 1. Set `proxy_token` in the private deployed file
-   `%USERPROFILE%\Saved Games\<DCS version>\Scripts\Hooks\dcs-fiddle-config.lua`.
+   `%USERPROFILE%\Saved Games\<DCS server version>\Scripts\DCSLuaRunner\dcs-fiddle-config.lua`.
 2. Set `DCS_FIDDLE_PROXY_TOKEN` in the environment of the Windows service that
    runs Caddy.
 
@@ -168,12 +173,25 @@ icacls.exe C:\Secure\DCSFiddle\operator01.key.pem /grant:r "$($env:USERNAME):(R)
 
 Review the resulting ACL with `icacls.exe <path>` before using the key.
 
-## 5. Stage the Lua Files
+## 5. Stage the DCS Dedicated-Server Lua Files
 
-Place these files in the DCS Saved Games Hooks directory:
+On the DCS dedicated server, use the Saved Games profile belonging to the
+Windows account that runs DCS. Place only the executable Hook here:
 
-- `dcs-fiddle-server.lua`
-- `dcs-fiddle-config.lua`, copied from the example and populated locally
+```text
+%USERPROFILE%\Saved Games\<DCS server version>\Scripts\Hooks\dcs-fiddle-server.lua
+```
+
+Create the config directory and place the populated, untracked config here:
+
+```text
+%USERPROFILE%\Saved Games\<DCS server version>\Scripts\DCSLuaRunner\dcs-fiddle-config.lua
+```
+
+Do not place `dcs-fiddle-config.lua` in `Scripts\Hooks`. DCS auto-loads Lua
+Hook scripts there; `dcs-fiddle-server.lua` instead loads this data-only config
+explicitly from `Scripts\DCSLuaRunner` for both the Hooks/GameGUI and Mission
+environments.
 
 Keep both ports and loopback binding as shipped. Ensure the DCS account can read
 the files, then restart DCS. Verify locally that ports 12080 and 12081 are bound

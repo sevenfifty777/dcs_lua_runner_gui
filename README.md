@@ -64,7 +64,8 @@ This application replicates the functionality of:
 ## Requirements
 
 - Python 3.10 or higher when running from source
-- DCS World with the secure Lua Runner server and external configuration installed
+- A DCS dedicated server with the secure Lua Runner Hook and external
+  configuration installed in its Saved Games profile
 - Caddy serving the Mission and Hooks endpoints over HTTPS
 - A trusted client certificate and ACL-protected unencrypted PEM private key
 - Required Python packages (see requirements.txt)
@@ -96,7 +97,12 @@ resolved Windows `requirements.lock`. `requirements-build.txt` records the
 direct build inputs. The build script requires the pinned PyInstaller version
 before it will create an artifact.
 
-## DCS Setup
+## DCS Dedicated-Server Setup
+
+These steps are performed on the **DCS dedicated server**, under the Windows
+account that runs the server. They are not DCS player/client installation
+steps. The desktop GUI and its mTLS client certificate belong on the authorized
+operator workstation.
 
 ### ⚠️ **CRITICAL SECURITY NOTICE** ⚠️
 
@@ -118,19 +124,24 @@ before it will create an artifact.
 
 ### Installation Steps
 
-You need to install the DCS Fiddle server script in your DCS installation:
+Install the DCS Fiddle server script in the DCS dedicated server's Saved Games
+profile:
 
 1. **Download** the `dcs-fiddle-server.lua` script (included in this repository)
-2. **Copy** to `%USERPROFILE%\Saved Games\<DCS VERSION>\Scripts\Hooks\`
-3. Copy `dcs-fiddle-config.lua.example` beside it as
-   `dcs-fiddle-config.lua`.
+2. **Copy the Hook** to
+   `%USERPROFILE%\Saved Games\<DCS SERVER VERSION>\Scripts\Hooks\dcs-fiddle-server.lua`.
+3. Create `%USERPROFILE%\Saved Games\<DCS SERVER VERSION>\Scripts\DCSLuaRunner\`,
+   then copy `dcs-fiddle-config.lua.example` there as
+   `dcs-fiddle-config.lua`. Keep it outside `Scripts\Hooks`; the Hook loads this
+   data-only file explicitly, so DCS must not auto-load it as another Hook.
 4. Generate a cryptographically random proxy token containing at least 256 bits
    of entropy and place it in the untracked configuration. Supply the same value
    to the Caddy Windows service as `DCS_FIDDLE_PROXY_TOKEN`. For an NSSM-managed
    service, add it through the NSSM **Environment** tab as
    `AppEnvironmentExtra`, preserve existing entries, and restart Caddy.
 5. Keep `bind_ip = "127.0.0.1"`, Mission port 12080, and Hooks port 12081.
-6. **⚠️ De-sanitize Mission Scripting** (edit `DCS_INSTALL\Scripts\MissionScripting.lua`):
+6. **⚠️ De-sanitize Mission Scripting on the DCS dedicated server** (edit
+   `DCS_SERVER_INSTALL\Scripts\MissionScripting.lua`):
    ```lua
    do
        sanitizeModule('os')

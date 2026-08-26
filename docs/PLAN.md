@@ -240,11 +240,16 @@ dcs-fiddle-server.lua
 
 ### 7.1 External configuration
 
-Move deployment-specific configuration to an untracked file such as:
+Move deployment-specific configuration to an untracked, data-only file on the
+DCS dedicated server (not a DCS player client):
 
 ```text
-Saved Games\DCS\Scripts\Hooks\dcs-fiddle-config.lua
+Saved Games\<DCS server version>\Scripts\DCSLuaRunner\dcs-fiddle-config.lua
 ```
+
+Keep only `dcs-fiddle-server.lua` in `Scripts\Hooks`. DCS auto-loads that Hook;
+the Hook explicitly loads the config from `Scripts\DCSLuaRunner`, preventing
+the config from also being evaluated as an independent Hook script.
 
 Provide only a tracked example:
 

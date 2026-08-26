@@ -4,7 +4,8 @@
 
 local SERVER_NAME = "DCS Lua Runner"
 local PROTOCOL_VERSION = 1
-local CONFIG_FILENAME = "dcs-fiddle-config.lua"
+local CONFIG_RELATIVE_PATH = "Scripts\\DCSLuaRunner\\dcs-fiddle-config.lua"
+local HOOKS_RELATIVE_DIRECTORY = "Scripts\\Hooks\\"
 local SERVER_FILENAME = "dcs-fiddle-server.lua"
 
 local DEFAULT_LOG_LEVEL = 1 -- 0 = debug, 1 = info, 2 = errors only
@@ -56,7 +57,7 @@ if not socket_ok or not socket then
     return
 end
 
-local function resolve_hooks_directory()
+local function resolve_saved_games_directory()
     local file_system = rawget(_G, "lfs")
     if not file_system then
         local loaded, module = pcall(require, "lfs")
@@ -69,7 +70,17 @@ local function resolve_hooks_directory()
         return nil, "LuaFileSystem writedir() is unavailable"
     end
 
-    return file_system.writedir() .. "Scripts\\Hooks\\"
+    local write_directory = file_system.writedir()
+    if type(write_directory) ~= "string" or write_directory == "" then
+        return nil, "LuaFileSystem writedir() returned an invalid path"
+    end
+
+    local final_character = write_directory:sub(-1)
+    if final_character ~= "\\" and final_character ~= "/" then
+        write_directory = write_directory .. "\\"
+    end
+
+    return write_directory
 end
 
 local function is_integer(value)
@@ -146,26 +157,26 @@ local function load_external_config()
         return validate_config(injected), nil
     end
 
-    local hooks_directory, directory_error = resolve_hooks_directory()
-    if not hooks_directory then
+    local saved_games_directory, directory_error = resolve_saved_games_directory()
+    if not saved_games_directory then
         error(directory_error)
     end
 
-    local config_path = hooks_directory .. CONFIG_FILENAME
+    local config_path = saved_games_directory .. CONFIG_RELATIVE_PATH
     local config_chunk, load_error = loadfile(config_path)
     if not config_chunk then
-        error("unable to load " .. CONFIG_FILENAME .. ": " .. tostring(load_error))
+        error("unable to load " .. CONFIG_RELATIVE_PATH .. ": " .. tostring(load_error))
     end
 
     local executed, raw_config = pcall(config_chunk)
     if not executed then
-        error("unable to evaluate " .. CONFIG_FILENAME .. ": " .. tostring(raw_config))
+        error("unable to evaluate " .. CONFIG_RELATIVE_PATH .. ": " .. tostring(raw_config))
     end
 
-    return validate_config(raw_config), hooks_directory
+    return validate_config(raw_config), saved_games_directory
 end
 
-local config_ok, config_or_error, hooks_directory = pcall(load_external_config)
+local config_ok, config_or_error, saved_games_directory = pcall(load_external_config)
 if not config_ok then
     log_error("Secure configuration rejected: " .. tostring(config_or_error))
     return
@@ -949,14 +960,16 @@ if is_mission then
         env.info("DCS Lua Runner secure server initialized", false)
     end
 else
-    hooks_directory = hooks_directory or resolve_hooks_directory()
-    if not hooks_directory then
-        log_error("Hooks directory could not be resolved for Mission bootstrap")
+    saved_games_directory = saved_games_directory or resolve_saved_games_directory()
+    if not saved_games_directory then
+        log_error("DCS Saved Games directory could not be resolved for Mission bootstrap")
         return
     end
 
-    local server_path = (hooks_directory .. SERVER_FILENAME):gsub("\\", "/")
-    local config_path = (hooks_directory .. CONFIG_FILENAME):gsub("\\", "/")
+    local server_path = (
+        saved_games_directory .. HOOKS_RELATIVE_DIRECTORY .. SERVER_FILENAME
+    ):gsub("\\", "/")
+    local config_path = (saved_games_directory .. CONFIG_RELATIVE_PATH):gsub("\\", "/")
     local next_poll_at = 0
     local callbacks = {}
 

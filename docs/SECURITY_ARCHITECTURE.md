@@ -7,6 +7,11 @@ who may submit code; it does not sandbox or make submitted Lua safe. Every
 holder of an accepted client private key must be treated as a DCS server
 administrator.
 
+The Lua Hook and data-only Lua config are installed on the DCS dedicated
+server, not on DCS player clients. The desktop GUI is the remote operator
+client. On the server, DCS auto-loads only `Scripts\Hooks\dcs-fiddle-server.lua`;
+that Hook explicitly loads `Scripts\DCSLuaRunner\dcs-fiddle-config.lua`.
+
 ## Trust Boundaries
 
 ```text
