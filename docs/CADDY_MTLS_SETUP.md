@@ -38,7 +38,36 @@ Get-NetTCPConnection -State Listen |
 The four application backends should ultimately listen only on `127.0.0.1`.
 The Lua server itself refuses any other bind address.
 
-## 2. Generate the Internal Proxy Token
+## 2. Configure Your Hostnames
+
+Keep real deployment hostnames out of this public repository. Put them in the
+following private or external locations:
+
+1. Create the required public DNS records at your DNS provider and point them to
+   the server running Caddy.
+2. Copy or merge `deploy/Caddyfile.example` into the active Caddyfile on the
+   server, such as `C:\Caddy\Caddyfile`. Replace the site address at the opening
+   line of each applicable block:
+
+   | Purpose | Public placeholder | Private backend |
+   | --- | --- | --- |
+   | Main DCS dashboard | `dcs-dashboard.example.com` | `127.0.0.1:3001` |
+   | LSO dashboard | `lso-dashboard.example.com` | `127.0.0.1:8090` |
+   | Mission Lua Runner | `fiddle.example.com` | `127.0.0.1:12080` |
+   | Hooks/GameGUI Lua Runner | `fiddle-gui.example.com` | `127.0.0.1:12081` |
+
+   If the dashboards already have working Caddy blocks, preserve their existing
+   addresses and authentication instead of replacing them from the template.
+3. In each GUI workstation's Settings tab, enter the real Mission and
+   Hooks/GUI URLs with `https://` and no path. The GUI stores them in
+   `%APPDATA%\DCSLuaRunner\settings.json`.
+
+Do not put production hostnames in `core/settings_manager.py` or
+`dcs_lua_runner_settings.json.tpl`; those tracked files intentionally retain
+reserved examples. Public hostnames do not belong in `dcs-fiddle-config.lua`,
+because the Lua listeners remain on loopback behind Caddy.
+
+## 3. Generate the Internal Proxy Token
 
 Run this in a private PowerShell session on the server. It creates a 256-bit,
 unpadded base64url value accepted by the Lua configuration:
@@ -51,15 +80,40 @@ $proxyToken = [Convert]::ToBase64String($tokenBytes).TrimEnd('=').Replace('+', '
 
 Put the value in both locations, without committing it:
 
-1. `proxy_token` in the deployed `dcs-fiddle-config.lua`.
-2. `DCS_FIDDLE_PROXY_TOKEN` in the Caddy Windows service environment.
+1. Set `proxy_token` in the private deployed file
+   `%USERPROFILE%\Saved Games\<DCS version>\Scripts\Hooks\dcs-fiddle-config.lua`.
+2. Set `DCS_FIDDLE_PROXY_TOKEN` in the environment of the Windows service that
+   runs Caddy.
 
-The exact persistent environment mechanism depends on the installed service
-wrapper. Restrict the wrapper configuration or environment storage to
-Administrators and the Caddy service identity. Restarting the interactive shell
-does not update an already-running Windows service. Restart Caddy after setting
-the service environment. If the value is missing or differs, the Lua backend
-fails closed with HTTP 401.
+### NSSM-managed Caddy service
+
+Prefer a service-specific NSSM environment entry over a machine-wide Windows
+environment variable. This limits routine exposure to the Caddy service and
+avoids making the token available to unrelated processes started later.
+
+1. From an elevated terminal, run `nssm edit <CaddyServiceName>`.
+2. Open the **Environment** tab.
+3. Leave **Replace default environment** unchecked so NSSM adds to, rather than
+   replaces, the normal service environment.
+4. Preserve every existing entry and add a new line:
+
+   ```text
+   DCS_FIDDLE_PROXY_TOKEN=<same generated value used in dcs-fiddle-config.lua>
+   ```
+
+5. Save the service configuration and restart the Caddy service. A Caddy config
+   reload alone does not recreate the Windows process environment.
+
+NSSM stores `AppEnvironmentExtra` in the service configuration. Restrict access
+to Administrators and the Caddy service identity. Prefer the NSSM editor over a
+command containing the token because command lines and shell history can expose
+secret values. See the official [NSSM environment documentation](https://nssm.cc/usage#environment)
+and [Caddy environment-variable documentation](https://caddyserver.com/docs/caddyfile/concepts#environment-variables).
+
+A machine-wide Windows environment variable can work after a full Caddy service
+restart, but it is broader than necessary and is not recommended here. If the
+two token values differ or either is missing, the Lua backend fails closed with
+HTTP 401.
 
 Clear the temporary PowerShell variables when finished:
 
@@ -68,7 +122,7 @@ Clear the temporary PowerShell variables when finished:
 $proxyToken = $null
 ```
 
-## 3. Create a Dedicated Client CA
+## 4. Create a Dedicated Client CA
 
 The following commands require an already-installed, trusted OpenSSL 3.x
 executable. Run them on an offline administrative workstation, not on the DCS
@@ -110,7 +164,7 @@ icacls.exe C:\Secure\DCSFiddle\operator01.key.pem /grant:r "$($env:USERNAME):(R)
 
 Review the resulting ACL with `icacls.exe <path>` before using the key.
 
-## 4. Stage the Lua Files
+## 5. Stage the Lua Files
 
 Place these files in the DCS Saved Games Hooks directory:
 
@@ -121,7 +175,7 @@ Keep both ports and loopback binding as shipped. Ensure the DCS account can read
 the files, then restart DCS. Verify locally that ports 12080 and 12081 are bound
 to `127.0.0.1`, not `0.0.0.0` or a public address.
 
-## 5. Stage and Validate Caddy
+## 6. Stage and Validate Caddy
 
 Merge `deploy/Caddyfile.example` into the active configuration. Preserve the
 two dashboard site blocks and their current authentication behavior. Update the
@@ -144,7 +198,7 @@ Do not reload if validation reports any error or if the adapted configuration
 does not contain the expected four sites. After validation, reload using the
 existing service procedure.
 
-## 6. Smoke Tests
+## 7. Smoke Tests
 
 Test from an authorized GUI workstation and from a client without a
 certificate.
@@ -165,7 +219,7 @@ Expected results:
 Also confirm Caddy logs do not contain the proxy token and DCS logs do not
 contain submitted Lua source.
 
-## 7. Rotation and Revocation
+## 8. Rotation and Revocation
 
 - Renew each client certificate before its short expiry.
 - If a client key is lost or suspected compromised, disable the Fiddle site
@@ -177,7 +231,7 @@ contain submitted Lua source.
 - Keep an inventory containing certificate subject, serial, operator, issue
   date, expiry, and revocation/replacement status. Do not record private keys.
 
-## 8. Rollback
+## 9. Rollback
 
 If Fiddle fails but both dashboards are healthy, restore only the prior Fiddle
 site blocks or temporarily remove them, validate the complete Caddyfile, and

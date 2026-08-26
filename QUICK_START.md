@@ -20,15 +20,28 @@ Edit the new configuration:
 The same proxy token must be available to the Caddy Windows service as
 `DCS_FIDDLE_PROXY_TOKEN`.
 
+If NSSM manages Caddy, run `nssm edit <CaddyServiceName>`, open the
+**Environment** tab, leave **Replace default environment** unchecked, preserve
+the existing entries, and add `DCS_FIDDLE_PROXY_TOKEN=<same token>`. Save and
+restart the Caddy service. Do not use a machine-wide variable unless a
+service-specific environment is unavailable.
+
 ## 2. Configure Caddy
 
 Start from `deploy/Caddyfile.example` and follow
-`docs/CADDY_MTLS_SETUP.md`. The template preserves the two dashboard routes and
-adds mTLS only to the following reserved example hostnames. Replace them with
-your own DNS names before deployment:
+`docs/CADDY_MTLS_SETUP.md`. Keep the tracked example unchanged; copy or merge it
+into the private active Caddyfile on the server and replace these site addresses
+there:
 
 - `https://fiddle.example.com` -> `127.0.0.1:12080`;
 - `https://fiddle-gui.example.com` -> `127.0.0.1:12081`.
+
+Create matching public DNS records pointing to Caddy. If you use the dashboard
+blocks from the template, also replace `dcs-dashboard.example.com` and
+`lso-dashboard.example.com`; preserve existing dashboard blocks when already
+deployed. Enter the two real Lua Runner URLs again in the GUI Settings tab. They
+are saved per user in `%APPDATA%\DCSLuaRunner\settings.json`; do not insert them
+into the tracked source defaults or JSON template.
 
 Before reload:
 

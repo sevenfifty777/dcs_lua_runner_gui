@@ -50,8 +50,8 @@ The following decisions are part of this plan:
     server and use hostname-based routing.
 13. The public-to-private mappings use redacted, reserved hostname
     placeholders. Replace them with the real deployment values:
-    - `dashboard.example.com` to `127.0.0.1:3001`;
-    - `lso.example.com` to `127.0.0.1:8090`;
+    - `dcs-dashboard.example.com` to `127.0.0.1:3001`;
+    - `lso-dashboard.example.com` to `127.0.0.1:8090`;
     - `fiddle.example.com` to `127.0.0.1:12080`;
     - `fiddle-gui.example.com` to `127.0.0.1:12081`.
 14. The server firewall already permits inbound TCP 80 and 443 only. Direct
@@ -174,8 +174,8 @@ Record:
 - active Caddyfile path;
 - public Mission hostname (repository placeholder: `fiddle.example.com`);
 - public GUI hostname (repository placeholder: `fiddle-gui.example.com`);
-- dashboard hostname (repository placeholder: `dashboard.example.com`);
-- LSO dashboard hostname (repository placeholder: `lso.example.com`);
+- dashboard hostname (repository placeholder: `dcs-dashboard.example.com`);
+- LSO dashboard hostname (repository placeholder: `lso-dashboard.example.com`);
 - current certificate issuer and expiration;
 - current Caddy-to-DCS upstream routes;
 - whether Caddy and DCS run on the same host;
@@ -553,8 +553,8 @@ the deployment source:
 
 | Public hostname | Backend | Purpose | Planned Caddy authentication |
 | --- | --- | --- | --- |
-| `dashboard.example.com` | `127.0.0.1:3001` | Main DCS web dashboard | Preserve existing application authentication |
-| `lso.example.com` | `127.0.0.1:8090` | LSO greenie-board dashboard | Preserve current behavior; audit separately if required |
+| `dcs-dashboard.example.com` | `127.0.0.1:3001` | Main DCS web dashboard | Preserve existing application authentication |
+| `lso-dashboard.example.com` | `127.0.0.1:8090` | LSO greenie-board dashboard | Preserve current behavior; audit separately if required |
 | `fiddle.example.com` | `127.0.0.1:12080` | Mission Lua execution | Require and verify an mTLS client certificate |
 | `fiddle-gui.example.com` | `127.0.0.1:12081` | Hooks/GameGUI Lua execution | Require and verify an mTLS client certificate |
 
@@ -567,11 +567,11 @@ The implementation will replace ambiguous `localhost` upstreams with explicit
 IPv4 loopback addresses. The planned Caddyfile shape is:
 
 ```caddyfile
-dashboard.example.com {
+dcs-dashboard.example.com {
 	reverse_proxy 127.0.0.1:3001
 }
 
-lso.example.com {
+lso-dashboard.example.com {
 	reverse_proxy 127.0.0.1:8090
 }
 
@@ -1037,11 +1037,11 @@ DCS.
 ### 17.3 Caddy tests
 
 - Active Caddyfile validates.
-- `dashboard.example.com` still reaches `127.0.0.1:3001` without a
+- `dcs-dashboard.example.com` still reaches `127.0.0.1:3001` without a
   Lua Runner client certificate.
 - Main dashboard health, password login, Discord OAuth initiation/callback,
   Bearer/cookie-authenticated requests, and SSE streams still behave as before.
-- `lso.example.com` still reaches `127.0.0.1:8090`, and `/` plus
+- `lso-dashboard.example.com` still reaches `127.0.0.1:8090`, and `/` plus
   `/api/passes` retain their previous behavior.
 - Neither dashboard upstream receives `X-DCS-Proxy-Token` or Lua Runner header
   rewriting.
@@ -1301,8 +1301,8 @@ The deployment topology is documented with redacted hostnames:
 - Caddy uses a separate hostname for every service.
 - The Mission and Hooks/GameGUI repository placeholders are
   `fiddle.example.com` and `fiddle-gui.example.com`.
-- The two dashboard repository placeholders are `dashboard.example.com` and
-  `lso.example.com`.
+- The two dashboard repository placeholders are `dcs-dashboard.example.com` and
+  `lso-dashboard.example.com`.
 - Only TCP 80/443 are publicly allowed; TCP 3001, 8090, 12080, and 12081 are
   externally blocked.
 

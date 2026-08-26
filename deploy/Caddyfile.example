@@ -1,6 +1,12 @@
-# Production template. Validate with the exact Caddy executable used by the
-# Windows service before reload. DCS_FIDDLE_PROXY_TOKEN must be supplied through
-# the Caddy service environment and must match dcs-fiddle-config.lua.
+# Production template. Every example.com site address below is a placeholder.
+# Copy or merge these blocks into the private active Caddyfile on the server,
+# replace the placeholders there, and keep real deployment hostnames out of this
+# public template. Preserve existing dashboard site addresses when applicable.
+#
+# Validate with the exact Caddy executable used by the Windows service before
+# reload. DCS_FIDDLE_PROXY_TOKEN must be supplied through the Caddy service
+# environment and must match dcs-fiddle-config.lua. For NSSM, use the Caddy
+# service's AppEnvironmentExtra setting, then restart that service.
 
 dcs-dashboard.example.com {
 	reverse_proxy 127.0.0.1:3001

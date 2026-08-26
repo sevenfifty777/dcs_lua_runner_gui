@@ -126,7 +126,9 @@ You need to install the DCS Fiddle server script in your DCS installation:
    `dcs-fiddle-config.lua`.
 4. Generate a cryptographically random proxy token containing at least 256 bits
    of entropy and place it in the untracked configuration. Supply the same value
-   to the Caddy Windows service as `DCS_FIDDLE_PROXY_TOKEN`.
+   to the Caddy Windows service as `DCS_FIDDLE_PROXY_TOKEN`. For an NSSM-managed
+   service, add it through the NSSM **Environment** tab as
+   `AppEnvironmentExtra`, preserve existing entries, and restart Caddy.
 5. Keep `bind_ip = "127.0.0.1"`, Mission port 12080, and Hooks port 12081.
 6. **⚠️ De-sanitize Mission Scripting** (edit `DCS_INSTALL\Scripts\MissionScripting.lua`):
    ```lua
@@ -149,7 +151,7 @@ _G['package'] = nil     -- Restore this line to disable package loading
 ### Remote Access Configuration
 
 The Lua ports must never be published. The topology below uses reserved
-`example.com` placeholders; replace them with your own DNS names:
+`example.com` placeholders. Keep the real names out of this public repository:
 
 ```text
 fiddle.example.com     -> Caddy HTTPS + mTLS -> 127.0.0.1:12080
@@ -157,8 +159,10 @@ fiddle-gui.example.com -> Caddy HTTPS + mTLS -> 127.0.0.1:12081
 ```
 
 Only TCP 80 and 443 are publicly allowed. TCP 3001, 8090, 12080, and 12081 are
-blocked externally. Use [deploy/Caddyfile.example](deploy/Caddyfile.example) as
-the starting point, then follow
+blocked externally. Put the real names in public DNS, the private active
+Caddyfile on the server, and the GUI Settings tab. Do not add them to the
+tracked source defaults or settings template. Use
+[deploy/Caddyfile.example](deploy/Caddyfile.example) as the starting point, then follow
 [docs/CADDY_MTLS_SETUP.md](docs/CADDY_MTLS_SETUP.md) and validate the active
 Caddyfile before reload.
 

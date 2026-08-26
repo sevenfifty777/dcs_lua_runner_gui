@@ -13,8 +13,8 @@ DCS dashboard or LSO dashboard application code.
 
 | Public hostname placeholder | Private backend |
 | --- | --- |
-| `dashboard.example.com` | `127.0.0.1:3001` |
-| `lso.example.com` | `127.0.0.1:8090` |
+| `dcs-dashboard.example.com` | `127.0.0.1:3001` |
+| `lso-dashboard.example.com` | `127.0.0.1:8090` |
 | `fiddle.example.com` | `127.0.0.1:12080` |
 | `fiddle-gui.example.com` | `127.0.0.1:12081` |
 
