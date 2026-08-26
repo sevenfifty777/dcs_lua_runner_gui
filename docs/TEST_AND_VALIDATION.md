@@ -36,7 +36,8 @@ only the Fiddle snippets. Confirm:
 - dashboard and LSO behavior is unchanged;
 - only the two Fiddle hostnames require the client certificate;
 - untrusted or missing client certificates fail the TLS handshake;
-- direct external connections to ports 3001, 8090, 12080, and 12081 fail;
+- direct external connections to ports 12080 and 12081 fail; when the optional
+  dashboards are deployed, ports 3001 and 8090 also remain blocked externally;
 - Caddy reaches the exact loopback backend for each hostname;
 - an incoming forged `X-DCS-Proxy-Token` cannot replace Caddy's value;
 - normal access logs contain neither bodies nor secrets.

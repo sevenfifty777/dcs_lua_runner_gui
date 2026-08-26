@@ -164,7 +164,9 @@ Caddyfile on the server, and the GUI Settings tab. Do not add them to the
 tracked source defaults or settings template. Use
 [deploy/Caddyfile.example](deploy/Caddyfile.example) as the starting point, then follow
 [docs/CADDY_MTLS_SETUP.md](docs/CADDY_MTLS_SETUP.md) and validate the active
-Caddyfile before reload.
+Caddyfile before reload. The DCS and LSO dashboard blocks in that template are
+optional examples for a shared Caddy installation; DCS Lua Runner requires only
+the Mission and Hooks/GameGUI Fiddle blocks.
 
 The complete design and rollout references are
 [security architecture](docs/SECURITY_ARCHITECTURE.md),

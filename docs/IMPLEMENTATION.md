@@ -20,7 +20,8 @@ DCS dashboard or LSO dashboard application code.
 
 All `example.com` names in this repository are reserved documentation
 placeholders. Supply the real deployment hostnames through private
-configuration.
+configuration. The two dashboard rows are optional shared-Caddy context, not
+DCS Lua Runner requirements.
 
 The server firewall permits inbound TCP 80 and 443. Direct external access to
 TCP 3001, 8090, 12080, and 12081 is already blocked and must remain blocked.

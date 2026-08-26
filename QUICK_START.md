@@ -39,9 +39,11 @@ there:
 Create matching public DNS records pointing to Caddy. If you use the dashboard
 blocks from the template, also replace `dcs-dashboard.example.com` and
 `lso-dashboard.example.com`; preserve existing dashboard blocks when already
-deployed. Enter the two real Lua Runner URLs again in the GUI Settings tab. They
-are saved per user in `%APPDATA%\DCSLuaRunner\settings.json`; do not insert them
-into the tracked source defaults or JSON template.
+deployed. Those dashboard blocks are optional examples and are not required by
+DCS Lua Runner; omit them when Caddy does not serve those applications. Enter
+the two real Lua Runner URLs again in the GUI Settings tab. They are saved per
+user in `%APPDATA%\DCSLuaRunner\settings.json`; do not insert them into the
+tracked source defaults or JSON template.
 
 Before reload:
 

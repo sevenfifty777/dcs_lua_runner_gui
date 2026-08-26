@@ -8,6 +8,10 @@
 # environment and must match dcs-fiddle-config.lua. For NSSM, use the Caddy
 # service's AppEnvironmentExtra setting, then restart that service.
 
+# OPTIONAL: These two dashboard blocks are unrelated to DCS Lua Runner. Keep or
+# adapt them only when the same Caddy instance already serves those dashboards;
+# otherwise remove both blocks. The two Fiddle blocks below are the required
+# configuration for DCS Lua Runner.
 dcs-dashboard.example.com {
 	reverse_proxy 127.0.0.1:3001
 }

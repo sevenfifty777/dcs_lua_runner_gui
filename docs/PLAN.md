@@ -5,6 +5,10 @@ Status: Proposed; production Caddy topology and firewall posture confirmed;
 implementation not started
 Primary repository: `C:\Users\thierry\Documents\GitHub\dcs_lua_runner_gui`
 
+The DCS and LSO dashboard blocks in this plan are optional shared-Caddy context.
+They are not dependencies of DCS Lua Runner and should be omitted when those
+applications are not hosted by the same Caddy instance.
+
 ## 1. Overview
 
 The DCS Lua Runner GUI is a Windows application that sends Lua source code to a

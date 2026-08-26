@@ -25,8 +25,9 @@ DCS LuaSocket listeners on 127.0.0.1:12080 and 127.0.0.1:12081
 DCS Mission and Hooks/GameGUI environments
 ```
 
-The main dashboard (`127.0.0.1:3001`) and LSO dashboard
-(`127.0.0.1:8090`) are separate applications. Their Caddy site blocks do not
+The optional main dashboard (`127.0.0.1:3001`) and LSO dashboard
+(`127.0.0.1:8090`) are separate applications, not DCS Lua Runner dependencies.
+When those applications share the Caddy instance, their site blocks do not
 inherit Fiddle mTLS, route restrictions, or proxy headers.
 
 ## Controls

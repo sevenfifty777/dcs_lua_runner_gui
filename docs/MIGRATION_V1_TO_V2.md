@@ -21,7 +21,8 @@ the original remote-code-execution weakness.
    `dcs-fiddle-config.lua` in Saved Games Hooks.
 2. Restart DCS and confirm ports 12080 and 12081 listen only on loopback.
 3. Merge the two Fiddle blocks from `deploy/Caddyfile.example` into the active
-   Caddyfile. Leave both dashboard blocks unchanged.
+   Caddyfile. If optional dashboard blocks already exist, leave them unchanged;
+   do not add them solely for DCS Lua Runner.
 4. Validate the complete Caddy configuration, reload, and run dashboard smoke
    tests immediately.
 5. Configure the v2 GUI certificate paths and run Test Connection for Mission

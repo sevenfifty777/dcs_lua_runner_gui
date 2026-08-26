@@ -16,8 +16,9 @@ GUI -- HTTPS + client certificate --> Caddy :443
   Route53 DNS module is not required for the current A-record configuration.
 - The client certificate authenticates the GUI to Caddy.
 - A separate random token authenticates Caddy to the loopback Lua service.
-- TCP 3001, 8090, 12080, and 12081 remain externally blocked. Only TCP 80 and
-  443 are public.
+- TCP 12080 and 12081 remain externally blocked. If the optional dashboards are
+  present, TCP 3001 and 8090 also remain externally blocked. Only TCP 80 and 443
+  are public.
 - The client-CA private key is kept offline. It is never installed on the DCS
   server or GUI workstation.
 
@@ -35,8 +36,9 @@ Get-NetTCPConnection -State Listen |
     Sort-Object LocalPort
 ```
 
-The four application backends should ultimately listen only on `127.0.0.1`.
-The Lua server itself refuses any other bind address.
+The two Lua Runner backends, plus any optional dashboard backends hosted on the
+same server, should listen only on `127.0.0.1`. The Lua server itself refuses any
+other bind address.
 
 ## 2. Configure Your Hostnames
 
@@ -49,15 +51,17 @@ following private or external locations:
    server, such as `C:\Caddy\Caddyfile`. Replace the site address at the opening
    line of each applicable block:
 
-   | Purpose | Public placeholder | Private backend |
-   | --- | --- | --- |
-   | Main DCS dashboard | `dcs-dashboard.example.com` | `127.0.0.1:3001` |
-   | LSO dashboard | `lso-dashboard.example.com` | `127.0.0.1:8090` |
-   | Mission Lua Runner | `fiddle.example.com` | `127.0.0.1:12080` |
-   | Hooks/GameGUI Lua Runner | `fiddle-gui.example.com` | `127.0.0.1:12081` |
+   | Purpose | Public placeholder | Private backend | Required here? |
+   | --- | --- | --- | --- |
+   | Main DCS dashboard | `dcs-dashboard.example.com` | `127.0.0.1:3001` | No; optional shared-Caddy example |
+   | LSO dashboard | `lso-dashboard.example.com` | `127.0.0.1:8090` | No; optional shared-Caddy example |
+   | Mission Lua Runner | `fiddle.example.com` | `127.0.0.1:12080` | Yes |
+   | Hooks/GameGUI Lua Runner | `fiddle-gui.example.com` | `127.0.0.1:12081` | Yes |
 
-   If the dashboards already have working Caddy blocks, preserve their existing
-   addresses and authentication instead of replacing them from the template.
+   The dashboard blocks are not dependencies of DCS Lua Runner. Include them
+   only if this Caddy instance also serves those applications. If they already
+   have working blocks, preserve their existing addresses and authentication;
+   otherwise omit both optional blocks.
 3. In each GUI workstation's Settings tab, enter the real Mission and
    Hooks/GUI URLs with `https://` and no path. The GUI stores them in
    `%APPDATA%\DCSLuaRunner\settings.json`.
@@ -177,9 +181,11 @@ to `127.0.0.1`, not `0.0.0.0` or a public address.
 
 ## 6. Stage and Validate Caddy
 
-Merge `deploy/Caddyfile.example` into the active configuration. Preserve the
-two dashboard site blocks and their current authentication behavior. Update the
-client-CA path if needed; Caddy requires only the CA certificate.
+Merge the two Fiddle blocks from `deploy/Caddyfile.example` into the active
+configuration. The two dashboard blocks are optional examples: preserve their
+existing configuration if those applications are already served by Caddy, or
+omit them entirely. Update the client-CA path if needed; Caddy requires only the
+CA certificate.
 
 The template uses `request_body max_size`, which requires Caddy 2.10 or later.
 If production is older, upgrade through the normal controlled process or omit
@@ -195,8 +201,8 @@ caddy adapt --config C:\Caddy\Caddyfile --pretty
 ```
 
 Do not reload if validation reports any error or if the adapted configuration
-does not contain the expected four sites. After validation, reload using the
-existing service procedure.
+does not contain both Fiddle sites plus any optional dashboard sites you chose
+to retain. After validation, reload using the existing service procedure.
 
 ## 7. Smoke Tests
 
@@ -213,8 +219,8 @@ Expected results:
 | Authenticated `POST /v1/execute?env=default` | HTTP 200 or structured Lua error |
 | Unsupported Fiddle path | HTTP 404 |
 | Direct external TCP 12080/12081 | Blocked |
-| Main dashboard HTTPS/login | Unchanged and functional |
-| LSO dashboard HTTPS | Unchanged and functional |
+| Main dashboard HTTPS/login, when deployed | Unchanged and functional |
+| LSO dashboard HTTPS, when deployed | Unchanged and functional |
 
 Also confirm Caddy logs do not contain the proxy token and DCS logs do not
 contain submitted Lua source.
