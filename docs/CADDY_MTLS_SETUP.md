@@ -78,14 +78,34 @@ because the Lua listeners remain on loopback behind Caddy.
 
 ## 3. Generate the Internal Proxy Token
 
-Run this in a private PowerShell session on the server. It creates a 256-bit,
-unpadded base64url value accepted by the Lua configuration:
+Prefer running this in a private Windows PowerShell 5.1 or PowerShell 7 session
+on the DCS/Caddy server. It may instead run on another trusted administrative
+PC, but then the token must be transferred securely and every temporary copy
+removed. It creates a 256-bit, unpadded base64url value accepted by the Lua
+configuration:
 
 ```powershell
-$tokenBytes = [byte[]]::new(32)
-[Security.Cryptography.RandomNumberGenerator]::Fill($tokenBytes)
-$proxyToken = [Convert]::ToBase64String($tokenBytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+$tokenBytes = New-Object byte[] 32
+$randomGenerator = [Security.Cryptography.RandomNumberGenerator]::Create()
+try {
+    $randomGenerator.GetBytes($tokenBytes)
+    $proxyToken = [Convert]::ToBase64String($tokenBytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+} finally {
+    $randomGenerator.Dispose()
+}
+
+if ($proxyToken -notmatch '^[A-Za-z0-9_-]{43}$') {
+    throw 'Generated proxy token has an unexpected format.'
+}
+$proxyToken
 ```
+
+The output must contain exactly 43 base64url characters. The final replacement
+argument above is `'_'` (underscore), not `'\_'`. `RandomNumberGenerator.Fill`
+is not available in Windows PowerShell 5.1, which is why this procedure uses
+the compatible `Create()` and `GetBytes()` methods. If random generation reports
+an error, discard any token produced from that attempt and start again; a newly
+allocated byte array contains zeros until the random generator fills it.
 
 Put the value in both locations, without committing it:
 
@@ -129,6 +149,7 @@ Clear the temporary PowerShell variables when finished:
 ```powershell
 [Array]::Clear($tokenBytes, 0, $tokenBytes.Length)
 $proxyToken = $null
+$randomGenerator = $null
 ```
 
 ## 4. Create a Dedicated Client CA

@@ -110,6 +110,9 @@ Implemented:
 - The GUI does not provide a TLS-verification bypass.
 - Client-certificate issuance, ACL protection, rotation, smoke testing, and
   rollback are documented without generating or committing any real key.
+- The proxy-token generator uses `RandomNumberGenerator.Create().GetBytes()` so
+  the documented command works in both Windows PowerShell 5.1 and PowerShell 7;
+  it validates the expected 43-character base64url output before use.
 
 ## Validation Status
 
