@@ -146,3 +146,4 @@ Caddy/
 dcs-fiddle-config.lua
 !build_exe.spec
 DCS_Lua_Runner_GUI_v*-dev/
+DCS_Lua_Runner_GUI_v1.0/
