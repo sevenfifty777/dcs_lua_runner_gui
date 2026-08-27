@@ -182,8 +182,10 @@ Fiddle site blocks as the starting point, then follow
 Caddyfile before restarting the service. The deployment guide is a
 beginner-oriented Windows walkthrough: it identifies the correct machine for
 every action and explains each certificate, copy, transfer, validation, and
-expected result. The DCS and LSO dashboard blocks in that template are optional
-examples for a shared Caddy installation; DCS Lua Runner requires only the
+expected result. It also documents one-time Caddy Windows-service installation
+with NSSM and includes screenshots of the required service settings. The DCS
+and LSO dashboard blocks in that template are optional examples for a shared
+Caddy installation; DCS Lua Runner requires only the
 Mission and Hooks/GameGUI Fiddle blocks.
 
 The complete design and rollout references are

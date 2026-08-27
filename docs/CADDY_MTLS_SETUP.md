@@ -98,6 +98,171 @@ Write these values in a private administrator note. Do not add the note to Git.
 Commands containing angle-bracket placeholders are not ready to paste until
 you replace those placeholders.
 
+## Optional One-Time Setup: Install Caddy as an NSSM Service
+
+**Run this section on: DCS/Caddy server, as an administrator**
+
+Use this section only if Caddy is not already installed as a Windows service.
+If the `Caddy` service already runs the DCS or LSO dashboards, do **not** install
+a second service. Open the existing service with `nssm edit Caddy`, confirm its
+settings against this section, and preserve its active Caddyfile.
+
+Check first:
+
+```powershell
+Get-Service -Name Caddy -ErrorAction SilentlyContinue
+```
+
+- If a `Caddy` service is displayed, use **Edit the existing service** below.
+- If nothing is displayed, use **Install a new service** below.
+
+### Obtain Caddy and NSSM
+
+1. Download the standard Windows Caddy executable from the
+   [official Caddy download page](https://caddyserver.com/download). This setup
+   does not require the Route53 module. Use Caddy 2.10 or newer because the
+   supplied Fiddle configuration uses `request_body max_size`.
+2. Use an NSSM binary already approved by your server administrator, or obtain
+   it from the [official NSSM download page](https://nssm.cc/download). Do not
+   download NSSM from an unknown mirror or an unrelated GitHub fork.
+3. On Windows Server 2016 and newer, including Windows Server 2019, do not use
+   the old NSSM 2.24 release without its documented `AppNoConsole` workaround.
+   The official NSSM site recommends build `2.24-101` or newer for these Windows
+   versions. NSSM is old, privileged service-wrapper software; record the exact
+   source and file hash and follow your server's software-approval policy.
+4. Use the 64-bit NSSM executable on a 64-bit Windows Server.
+
+Place the files as follows and leave `nssm.exe` in place after installation;
+Windows uses it to launch the Caddy service:
+
+```text
+C:\Caddy\caddy.exe
+C:\Caddy\nssm.exe
+C:\Caddy\Caddyfile
+```
+
+Create `C:\Caddy` if necessary, then confirm the Caddy executable works:
+
+```powershell
+New-Item -ItemType Directory -Path 'C:\Caddy' -Force
+& 'C:\Caddy\caddy.exe' version
+```
+
+The Caddyfile may initially be the server's existing dashboard configuration.
+Do not overwrite it with `deploy\Caddyfile.example`. Section 10 explains how to
+merge only the two Fiddle blocks into the active file.
+
+### Install a new service
+
+Open an elevated PowerShell window and run:
+
+```powershell
+& 'C:\Caddy\nssm.exe' install Caddy
+```
+
+The NSSM service installer opens. Configure these fields.
+
+On the **Application** tab:
+
+| Field | Value |
+| --- | --- |
+| Path | `C:\Caddy\caddy.exe` |
+| Startup directory | `C:\Caddy` |
+| Arguments | `run --config C:\Caddy\Caddyfile` |
+
+![NSSM Application tab showing the Caddy executable, startup directory, and run arguments](assets/caddy-nssm/01-application.png)
+
+Use `caddy run`, not `caddy start`: NSSM must monitor the foreground Caddy
+process. Caddy's own documentation also recommends running Caddy as a service
+on Windows instead of using `caddy start`.
+
+On the **Details** tab:
+
+- set the display name to `Caddy`;
+- set **Startup type** to **Automatic**.
+
+![NSSM Details tab showing automatic startup](assets/caddy-nssm/02-details.png)
+
+On the **Log on** tab, use the service account selected by your server
+administrator. A dedicated non-interactive account limits impact compared with
+an administrator account, but it must be able to:
+
+- read and execute `C:\Caddy\caddy.exe`;
+- read `C:\Caddy\Caddyfile` and `C:\Caddy\pki`;
+- write the two log files configured below;
+- write its persistent Caddy data directory under that account's
+  `%AppData%\Caddy`.
+
+Do not delete the Caddy data directory: it contains Caddy-managed TLS material
+and other persistent state.
+
+On the **I/O** tab, leave stdin empty and configure:
+
+| Field | Value |
+| --- | --- |
+| Output (stdout) | `C:\Caddy\caddy-service.log` |
+| Error (stderr) | `C:\Caddy\caddy-error.log` |
+
+![NSSM I/O tab showing separate Caddy output and error logs](assets/caddy-nssm/03-io-logs.png)
+
+On the **File rotation** tab, enable rotation on service restart so the log
+files cannot grow indefinitely. Online rotation is optional and adds more
+moving parts; leave it disabled unless you have tested and need it. NSSM's
+[I/O and rotation documentation](https://nssm.cc/usage#io) explains these
+settings.
+
+Do not add a proxy token yet if Section 4 has not generated it. Return to the
+**Environment** tab during Section 4. Leave **Replace default environment**
+unchecked and add only the service-specific variable:
+
+```text
+DCS_FIDDLE_PROXY_TOKEN=paste-the-generated-token-here
+```
+
+![NSSM Environment tab showing the proxy-token variable with its value obscured](assets/caddy-nssm/04-environment-token.png)
+
+The screenshots use the French NSSM interface. The tab order and fields are the
+same in the English interface. The fourth screenshot intentionally hides the
+real token; never include a real token in documentation or screenshots.
+
+Click **Install service**. Do not start a new Fiddle configuration until the
+client-CA certificate, token, and active Caddyfile are ready. Sections 4 through
+11 complete those steps and safely start the service.
+
+### Edit the existing service
+
+For a server where Caddy already serves the dashboards, open the same tabs with:
+
+```powershell
+& 'C:\Caddy\nssm.exe' edit Caddy
+```
+
+The button says **Edit service** instead of **Install service**, as shown in the
+screenshots. Preserve the existing service account, environment entries, paths,
+and dashboard Caddyfile blocks unless this guide explicitly instructs you to
+change them.
+
+### Verify after the service is started
+
+After completing Section 11, verify the service and public listeners:
+
+```powershell
+Get-Service -Name Caddy
+Get-NetTCPConnection -State Listen |
+    Where-Object LocalPort -in 80,443 |
+    Select-Object LocalAddress,LocalPort,OwningProcess
+```
+
+Expected result: the Caddy service is `Running`, and Caddy owns the required
+HTTP/HTTPS listeners. If startup fails, inspect:
+
+```powershell
+Get-Content -LiteralPath 'C:\Caddy\caddy-error.log' -Tail 50
+```
+
+Never paste an unredacted token, private key, or private hostname from logs into
+an issue or chat.
+
 ## 1. Back Up and Record the Existing Server
 
 **Run this section on: DCS/Caddy server**
@@ -258,6 +423,9 @@ Do not add spaces around `=` and do not add a trailing `=` to the token.
 5. Preserve every existing entry.
 6. Add the `DCS_FIDDLE_PROXY_TOKEN=...` line shown above.
 7. Save the NSSM configuration.
+
+The illustrated **Environment** tab is shown in the optional NSSM service setup
+near the start of this guide.
 
 Do not put the token directly on an `nssm set` command line because command
 history and process inspection can expose it. A Caddy configuration reload does

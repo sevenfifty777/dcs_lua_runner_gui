@@ -41,6 +41,12 @@ Edit the new configuration:
 The same proxy token must be available to the Caddy Windows service as
 `DCS_FIDDLE_PROXY_TOKEN`.
 
+If Caddy is not yet installed as a Windows service, follow the **Optional
+One-Time Setup: Install Caddy as an NSSM Service** section in
+[docs/CADDY_MTLS_SETUP.md](docs/CADDY_MTLS_SETUP.md). It includes screenshots
+for the application, automatic-start, log, and environment settings. Do not
+install a second Caddy service when one already serves the dashboards.
+
 If NSSM manages Caddy, run `nssm edit <CaddyServiceName>`, open the
 **Environment** tab, leave **Replace default environment** unchecked, preserve
 the existing entries, and add `DCS_FIDDLE_PROXY_TOKEN=<same token>`. Save and

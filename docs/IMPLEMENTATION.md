@@ -120,6 +120,10 @@ Implemented:
   and rollback. Deployment now downloads only the two DCS Lua files and the
   Caddy example individually; the CA workstation separately downloads
   `client-cert-ext.cnf`, with no repository clone or GUI package transfer.
+- Added an illustrated, one-time NSSM procedure for installing or editing the
+  Caddy Windows service. The tracked documentation assets show the application,
+  automatic-start, I/O logging, and service-environment tabs without exposing a
+  real token; the private source `Caddy` directory remains ignored.
 
 ## Validation Status
 
