@@ -127,7 +127,10 @@ operator workstation.
 Install the DCS Fiddle server script in the DCS dedicated server's Saved Games
 profile:
 
-1. **Download** the `dcs-fiddle-server.lua` script (included in this repository)
+1. **Download only** [dcs-fiddle-server.lua](dcs-fiddle-server.lua) and
+   [dcs-fiddle-config.lua.example](dcs-fiddle-config.lua.example) as individual
+   files from this repository. A repository clone and the GUI distribution
+   folder are not needed on the DCS server.
 2. **Copy the Hook** to
    `%USERPROFILE%\Saved Games\<DCS SERVER VERSION>\Scripts\Hooks\dcs-fiddle-server.lua`.
 3. Create `%USERPROFILE%\Saved Games\<DCS SERVER VERSION>\Scripts\DCSLuaRunner\`,
@@ -172,8 +175,9 @@ fiddle-gui.example.com -> Caddy HTTPS + mTLS -> 127.0.0.1:12081
 Only TCP 80 and 443 are publicly allowed. TCP 3001, 8090, 12080, and 12081 are
 blocked externally. Put the real names in public DNS, the private active
 Caddyfile on the server, and the GUI Settings tab. Do not add them to the
-tracked source defaults or settings template. Use
-[deploy/Caddyfile.example](deploy/Caddyfile.example) as the starting point, then follow
+tracked source defaults or settings template. Download
+[deploy/Caddyfile.example](deploy/Caddyfile.example) individually, use its two
+Fiddle site blocks as the starting point, then follow
 [docs/CADDY_MTLS_SETUP.md](docs/CADDY_MTLS_SETUP.md) and validate the active
 Caddyfile before restarting the service. The deployment guide is a
 beginner-oriented Windows walkthrough: it identifies the correct machine for

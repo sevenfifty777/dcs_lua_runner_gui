@@ -44,6 +44,26 @@ The DCS Lua files are server-side files. Do not install them in a player's DCS
 client Saved Games profile. The client private key belongs on the GUI
 workstation, not in DCS Saved Games.
 
+## Download Only the Files You Need
+
+You do **not** need to clone the repository or transfer the GUI distribution
+folder to the server. Download these three individual files from GitHub:
+
+| File to download | Used on | Purpose |
+| --- | --- | --- |
+| [`dcs-fiddle-server.lua`](../dcs-fiddle-server.lua) | DCS/Caddy server | Executable DCS Hook |
+| [`dcs-fiddle-config.lua.example`](../dcs-fiddle-config.lua.example) | DCS/Caddy server | Configuration template; rename the copied file to `dcs-fiddle-config.lua` |
+| [`deploy/Caddyfile.example`](../deploy/Caddyfile.example) | DCS/Caddy server | Reference from which to merge the two Fiddle site blocks into the existing active Caddyfile |
+
+On GitHub, open each link, select **Download raw file**, and transfer only those
+three files to the DCS/Caddy server. Do not replace the active Caddyfile with the
+example: it may already contain the DCS and LSO dashboard sites.
+
+The CA workstation later needs one additional non-secret file,
+[`deploy/client-cert-ext.cnf`](../deploy/client-cert-ext.cnf). Download that one
+file directly to the CA workstation when Section 5 tells you to do so. It is not
+installed on the server.
+
 ## Files and Whether They Are Secret
 
 | File/value | Secret? | Final location |
@@ -144,38 +164,15 @@ Use the Saved Games profile of the Windows account that actually runs DCS. If
 you are logged in as a different administrator, `%USERPROFILE%` points to the
 wrong account; navigate explicitly to the DCS runtime account's profile.
 
-Copy the two source files from the extracted `DCS_Lua_Runner_GUI_v2.0-dev`
-package (or from the repository root). Replace both example paths first:
-
-```powershell
-$DeploymentFiles = 'C:\path\to\DCS_Lua_Runner_GUI_v2.0-dev'
-$DcsSavedGames = 'C:\Users\DCS-server-account\Saved Games\DCS.openbeta_server'
-
-$HooksDirectory = Join-Path $DcsSavedGames 'Scripts\Hooks'
-$ConfigDirectory = Join-Path $DcsSavedGames 'Scripts\DCSLuaRunner'
-
-New-Item -ItemType Directory -Path $HooksDirectory -Force
-New-Item -ItemType Directory -Path $ConfigDirectory -Force
-
-Copy-Item `
-    -LiteralPath "$DeploymentFiles\dcs-fiddle-server.lua" `
-    -Destination "$HooksDirectory\dcs-fiddle-server.lua"
-
-Copy-Item `
-    -LiteralPath "$DeploymentFiles\dcs-fiddle-config.lua.example" `
-    -Destination "$ConfigDirectory\dcs-fiddle-config.lua"
-```
-
-Expected result: the first `Copy-Item` creates the Hook file and the second
-creates a renamed config file without the `.example` suffix.
-
-Place only the executable Hook here:
+Use File Explorer to create the destination directories if they do not already
+exist. Copy `dcs-fiddle-server.lua` without renaming it to:
 
 ```text
 C:\Users\<DCS-server-account>\Saved Games\<DCS server version>\Scripts\Hooks\dcs-fiddle-server.lua
 ```
 
-Create the separate config directory and copy the example as:
+Copy `dcs-fiddle-config.lua.example` to the separate configuration directory,
+then rename that copied file to `dcs-fiddle-config.lua`:
 
 ```text
 C:\Users\<DCS-server-account>\Saved Games\<DCS server version>\Scripts\DCSLuaRunner\dcs-fiddle-config.lua
@@ -317,11 +314,9 @@ Do not continue with production issuance unless the command reports OpenSSL
 primarily provides source archives; do not download an unverified Windows
 binary from a search result.
 
-Create a new empty CA working directory. Replace the repository path below with
-the actual repository location on the CA workstation:
+Create a new empty CA working directory:
 
 ```powershell
-$RepositoryRoot = 'C:\path\to\dcs_lua_runner_gui'
 $CaDirectory = 'C:\Secure\DCSFiddleCA'
 $CaIdentity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 
@@ -331,12 +326,17 @@ if (Test-Path -LiteralPath $CaDirectory) {
 New-Item -ItemType Directory -Path $CaDirectory
 icacls.exe $CaDirectory /inheritance:r
 icacls.exe $CaDirectory /grant:r "${CaIdentity}:(OI)(CI)(F)"
+```
 
-Copy-Item `
-    -LiteralPath "$RepositoryRoot\deploy\client-cert-ext.cnf" `
-    -Destination "$CaDirectory\client-cert-ext.cnf"
+Using the GitHub link in **Download Only the Files You Need**, download
+`client-cert-ext.cnf` directly into `C:\Secure\DCSFiddleCA`. No repository clone
+or GUI distribution folder is needed. Confirm the final name is exactly
+`client-cert-ext.cnf`, not `client-cert-ext.cnf.txt`.
 
-Set-Location -LiteralPath $CaDirectory
+Then return to PowerShell:
+
+```powershell
+Set-Location -LiteralPath 'C:\Secure\DCSFiddleCA'
 Get-ChildItem -LiteralPath .
 ```
 
@@ -355,10 +355,8 @@ It is read only while signing operator certificates. It is not installed on
 Caddy, DCS, or the GUI workstation. Keep it in the offline CA directory so all
 future operator certificates use the same rules.
 
-The old command form `-extfile deploy\client-cert-ext.cnf` works only when the
-current PowerShell directory is the repository root. This guide deliberately
-copies the file first and uses `-extfile .\client-cert-ext.cnf`, avoiding that
-hidden working-directory assumption.
+The certificate-signing command uses `-extfile .\client-cert-ext.cnf`, so run it
+from `C:\Secure\DCSFiddleCA` as shown in this guide.
 
 ## 6. Create the Client Certificate Authority
 
@@ -731,14 +729,19 @@ $OpenSSL = 'C:\Program Files\Git\usr\bin\openssl.exe'
 & $OpenSSL version
 ```
 
-### `deploy\client-cert-ext.cnf` cannot be found
+### `client-cert-ext.cnf` cannot be found
 
-You are not running from the repository root. Follow Section 5 to copy the
-non-secret file into `C:\Secure\DCSFiddleCA`, then use:
+Download the individual non-secret file using the link near the start of this
+guide and save it as `C:\Secure\DCSFiddleCA\client-cert-ext.cnf`. In PowerShell,
+change to that directory and verify the file exists before repeating the full
+signing command from Section 7:
 
 ```powershell
--extfile .\client-cert-ext.cnf
+Set-Location -LiteralPath 'C:\Secure\DCSFiddleCA'
+Test-Path -LiteralPath '.\client-cert-ext.cnf'
 ```
+
+Expected result: `True`.
 
 ### `RandomNumberGenerator.Fill` does not exist
 

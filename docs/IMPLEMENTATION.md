@@ -115,9 +115,11 @@ Implemented:
   it validates the expected 43-character base64url output before use.
 - Reworked the Caddy/mTLS guide as an operator-oriented Windows walkthrough.
   Every section now identifies its machine role, classifies secret and public
-  files, explains expected output, makes the `client-cert-ext.cnf` copy step
-  explicit, and separates CA creation, file transfer, DCS server installation,
-  GUI key ACLs, Caddy validation, service restart, renewal, and rollback.
+  files, explains expected output, and separates CA creation, file transfer, DCS
+  server installation, GUI key ACLs, Caddy validation, service restart, renewal,
+  and rollback. Deployment now downloads only the two DCS Lua files and the
+  Caddy example individually; the CA workstation separately downloads
+  `client-cert-ext.cnf`, with no repository clone or GUI package transfer.
 
 ## Validation Status
 

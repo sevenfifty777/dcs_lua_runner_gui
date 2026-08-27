@@ -9,6 +9,11 @@ Perform this step on the **DCS dedicated server**, using the Saved Games profile
 of the Windows account that runs the DCS server. Do not install these Lua files
 in a player's DCS client Saved Games profile.
 
+Download only [dcs-fiddle-server.lua](dcs-fiddle-server.lua) and
+[dcs-fiddle-config.lua.example](dcs-fiddle-config.lua.example) individually
+from the GitHub repository. You do not need to clone the repository or copy the
+GUI distribution folder to the server.
+
 Copy the executable Hook script to:
 
 ```text
@@ -44,11 +49,13 @@ service-specific environment is unavailable.
 
 ## 2. Configure Caddy
 
-Start from `deploy/Caddyfile.example` and follow
-`docs/CADDY_MTLS_SETUP.md`. That guide is the authoritative beginner-oriented
-procedure: it identifies the machine for every step, explains every certificate
-file, and includes the required copy/transfer commands. Do not use this Quick
-Start as a substitute for the full guide during the first deployment.
+Download [deploy/Caddyfile.example](deploy/Caddyfile.example) individually. Use
+it as a reference and follow
+[docs/CADDY_MTLS_SETUP.md](docs/CADDY_MTLS_SETUP.md). That guide is the
+authoritative beginner-oriented procedure. Do not replace an existing active
+Caddyfile with the example: merge only the two Fiddle blocks so existing
+dashboard sites remain unchanged. Do not use this Quick Start as a substitute
+for the full guide during the first deployment.
 
 Keep the tracked example unchanged; copy or merge it into the private active
 Caddyfile on the server and replace these site addresses there:
